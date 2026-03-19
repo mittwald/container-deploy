@@ -1,0 +1,30 @@
+{
+  "name": "container-deploy",
+  "version": "0.1.0",
+  "description": "Reusable orchestration and API adapters for building and deploying containerized projects.",
+  "main": "dist/orchestration/deploy_project.js",
+  "types": "dist/types/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo 'No tests yet' && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/container-deploy.git"
+  },
+  "keywords": [
+    "containers",
+    "deployment",
+    "orchestration",
+    "typescript",
+    "buildkit"
+  ],
+  "author": "Lars Bergmann <l.bergmann@mittwald.de>",
+  "license": "MIT",
+  "dependencies": {
+    "@mittwald/api-client": "^4.131.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
