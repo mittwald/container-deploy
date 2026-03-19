@@ -6,6 +6,7 @@
   "types": "dist/types/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "build:watch": "tsc -w",
     "test": "echo 'No tests yet' && exit 0"
   },
   "repository": {
@@ -25,6 +26,7 @@
     "@mittwald/api-client": "^4.131.0"
   },
   "devDependencies": {
-    "typescript": "^5.3.3"
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3"
   }
 }
