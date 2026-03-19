@@ -11,7 +11,8 @@
     "moduleResolution": "node16",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "isolatedModules": true
   },
   "include": ["src/**/*"],
   "exclude": ["test", "dist", "node_modules"]

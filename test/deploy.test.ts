@@ -1,55 +1,140 @@
 import { deployProject } from "../src/orchestration/deploy_project";
-import { createApiClient } from "@mittwald/api-client"; // or the right export path
-import { mocked } from "ts-jest/utils"; // For tight, type-safe manual mocks
+import { Duration } from "../src/utils/helpers";
+import type { DeployOptions, DeployResult } from "../src/types/index";
 
-// --- Setup dummy/mock variables:
-const TEST_TOKEN = "test-token";
-const TEST_BASE_URL = "http://localhost:12345"; // Your local mock API endpoint
-const TEST_REPO_URL = "https://github.com/your-org/simple-test-repo";
-
-// --- Optional: mock or spy on methods (if you want to intercept or stub)
-
-// Sample: mock Docker build/export logic if you want to not hit actual Docker
-jest.mock("../src/entities/docker", () => ({
-  buildDockerImage: jest.fn(async (...args) => ({
-    // Return structure matching your normal function
-    imageName: "local/test-image:latest",
-    // ...other RepositoryData fields
-  })),
-  localDockerPush: jest.fn(async () => {
-    // Can be empty; we're not testing "push"
-  }),
+// --- Mock all the entities that deployProject depends on
+jest.mock("../src/entities/project", () => ({
+  getProjectShortIdFromUuid: jest.fn(async () => "test-short-id"),
 }));
 
-// If your entities use @mittwald/api-client directly, you can mock or spy on
-// its methods as needed using jest.spyOn
+jest.mock("../src/entities/registry", () => ({
+  checkDocker: jest.fn(),
+  checkRailpack: jest.fn(),
+  setupProjectRegistry: jest.fn(async () => ({
+    username: "test-user",
+    password: "test-password",
+    uri: "registry.test.project.space",
+    host: "registry.test.project.space",
+    registryServiceId: "registry-service-123",
+    registry: { id: "registry-123" },
+    created: true,
+  })),
+  buildDockerImage: jest.fn(async (registryData, repositoryData) => ({
+    ...repositoryData,
+    imageId: "sha256:test-image-id",
+    imageName: "registry.test.project.space/app-image:latest",
+  })),
+  localDockerPush: jest.fn(async () => undefined),
+}));
+
+jest.mock("../src/entities/repository", () => ({
+  checkRepository: jest.fn(async () => ({
+    buildContext: "/tmp/test-repo",
+    ports: ["80:80/tcp"],
+    dockerfilePath: "/tmp/test-repo/Dockerfile",
+    dockerfileContent: "FROM nginx:alpine",
+    dockerfileCreated: false,
+    railpackPlanPath: null,
+  })),
+}));
+
+jest.mock("../src/entities/service", () => ({
+  deployService: jest.fn(async () => ({
+    serviceName: "app-test-project",
+    deployedServiceId: "service-123",
+  })),
+}));
 
 describe("deployProject integration test", () => {
-  it("should build and deploy from scratch with mocked API and docker", async () => {
-    // 1. Instantiate client
-    const client = createApiClient({
-      token: TEST_TOKEN,
-      baseUrl: TEST_BASE_URL,
-    });
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
-    // 2. Prepare minimal inputs
-    const options = {
-      projectId: "test-project",
-      apiClient: client,
-      waitTimeout: 10000,
-      // ...anything else you need for deployProject
+  it("should successfully build and deploy a project with mocked dependencies", async () => {
+    // Prepare test input
+    const testProjectId = "test-project-uuid";
+    const testTimeout = Duration.fromSeconds(30);
+
+    const options: DeployOptions = {
+      projectId: testProjectId,
+      apiClient: {} as any, // Mock API client - actual methods are mocked
+      waitTimeout: testTimeout,
     };
 
-    // 3. Run deploy orchestration
-    const result = await deployProject(options);
+    // Execute deployProject
+    const result: DeployResult = await deployProject(options);
 
-    // 4. Assert desired calls/results
-    // For example, ensure deployProject returns expected structure
-    expect(result.deployedServiceId).toBeDefined();
-    // If you want to ensure "docker.buildDockerImage" was called:
-    // @ts-ignore-next-line
-    expect(require("../src/entities/docker").buildDockerImage).toHaveBeenCalled();
+    // Assert the result structure
+    expect(result).toBeDefined();
+    expect(result.deployedServiceId).toBe("service-123");
+    expect(result.serviceName).toBe("app-test-project");
 
-    // You could also check that client methods were called with correct parameters using jest.spyOn
+    // Verify that all expected functions were called
+    const projectModule = require("../src/entities/project");
+    expect(projectModule.getProjectShortIdFromUuid).toHaveBeenCalledWith(
+      options.apiClient,
+      testProjectId
+    );
+
+    const registryModule = require("../src/entities/registry");
+    expect(registryModule.checkDocker).toHaveBeenCalled();
+    expect(registryModule.checkRailpack).toHaveBeenCalled();
+    expect(registryModule.setupProjectRegistry).toHaveBeenCalledWith(
+      options.apiClient,
+      testProjectId,
+      "test-short-id",
+      testTimeout
+    );
+    expect(registryModule.buildDockerImage).toHaveBeenCalled();
+    expect(registryModule.localDockerPush).toHaveBeenCalled();
+
+    const repositoryModule = require("../src/entities/repository");
+    expect(repositoryModule.checkRepository).toHaveBeenCalled();
+
+    const serviceModule = require("../src/entities/service");
+    expect(serviceModule.deployService).toHaveBeenCalledWith(
+      options.apiClient,
+      testProjectId,
+      expect.objectContaining({
+        imageName: "registry.test.project.space/app-image:latest",
+      }),
+      testTimeout
+    );
+  });
+
+  it("should handle errors from Docker checks", async () => {
+    const registryModule = require("../src/entities/registry");
+    registryModule.checkDocker.mockRejectedValueOnce(
+      new Error("Docker is not installed")
+    );
+
+    const testProjectId = "test-project-uuid";
+    const options: DeployOptions = {
+      projectId: testProjectId,
+      apiClient: {} as any,
+      waitTimeout: Duration.fromSeconds(30),
+    };
+
+    await expect(deployProject(options)).rejects.toThrow(
+      "Docker is not installed"
+    );
+  });
+
+  it("should handle errors from registry setup", async () => {
+    const registryModule = require("../src/entities/registry");
+    registryModule.setupProjectRegistry.mockRejectedValueOnce(
+      new Error("Failed to setup registry")
+    );
+
+    const testProjectId = "test-project-uuid";
+    const options: DeployOptions = {
+      projectId: testProjectId,
+      apiClient: {} as any,
+      waitTimeout: Duration.fromSeconds(30),
+    };
+
+    await expect(deployProject(options)).rejects.toThrow(
+      "Failed to setup registry"
+    );
   });
 });
