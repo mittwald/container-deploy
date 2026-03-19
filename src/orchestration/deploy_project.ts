@@ -1,11 +1,21 @@
-import { setupProjectRegistry } from "../entities/registry";
-import { checkRepository, buildDockerImage, localDockerPush } from "../entities/repository";
-import { deployService } from "../entities/service";
-import { getProjectShortIdFromUuid } from "../entities/project";
-import type { DeployOptions, DeployResult } from "../types";
+import {
+    setupProjectRegistry,
+    buildDockerImage,
+    localDockerPush
+} from "../entities/registry.js";
+
+
+import { checkRepository } from "../entities/repository.js";
+import { deployService } from "../entities/service.js";
+import { getProjectShortIdFromUuid } from "../entities/project.js";
+import { checkDocker, checkRailpack } from "../entities/registry.js";
+
+import type {
+    DeployOptions,
+    DeployResult
+} from "../types/index.js";
 
 export async function deployProject(opts: DeployOptions): Promise<DeployResult> {
-  // No renderer/progress here: pure logic and structured result/errors
 
   const projectShortId = await getProjectShortIdFromUuid(opts.apiClient, opts.projectId);
 

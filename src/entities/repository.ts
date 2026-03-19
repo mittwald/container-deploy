@@ -7,9 +7,13 @@
 */
 
 import path from "path";
-import { pathExists } from "../../../lib/util/fs/pathExists.js";
+import { pathExists } from "../utils/helpers.js";
 import fs from "fs/promises";
 import { execSync } from "child_process";
+
+import {
+    RepositoryData
+} from "../types/index.js";
 
 // assmuning a very simple static page if no dockerfile is
 // present, later this will become more complex, e.g. with buildpacks
@@ -111,5 +115,5 @@ export async function checkRepository() {
         ports,
         railpackPlanPath,
     };
-    return repositoryData;
+    return repositoryData as RepositoryData;
 }

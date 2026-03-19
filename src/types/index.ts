@@ -1,3 +1,7 @@
+import {
+    Duration,
+} from "../utils/helpers.js";
+
 export type RepositoryData = {
   buildContext: string;
   ports: string[];
@@ -22,4 +26,15 @@ export type RegistryData = {
     registryServiceId: string;
     registry: any;
     created?: boolean;
+};
+
+export type DeployResult = {
+    deployedServiceId: string;
+    serviceName: string;
+};
+
+export type DeployOptions = {
+    apiClient: any;
+    projectId: string;
+    waitTimeout: Duration;
 };

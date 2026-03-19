@@ -15,17 +15,15 @@ import {
 } from "@mittwald/api-client";
 
 import {
+    Duration,
+    waitUntil,
     generatePasswordWithSpecialChars
-} from "../../../lib/util/password/generatePasswordWithSpecialChars.js";
+} from "../utils/helpers.js";
 
 import {
-    waitUntil
-} from "../../../lib/wait.js";
-
-import Duration from "../../../lib/units/Duration.js";
-
-import { RepositoryData } from "../repository/types.js";
-import { RegistryData } from "./types.js";
+    RepositoryData,
+    RegistryData
+} from "../types/index.js";
 
 
 // type shorthands

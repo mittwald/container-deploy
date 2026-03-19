@@ -3,20 +3,20 @@
     mostly spin up services from give image and meta data
 */
 
-import { RepositoryData } from "../repository/types.js";
-
 import {
     MittwaldAPIV2Client,
     assertStatus,
 } from "@mittwald/api-client";
 
 import {
-    waitUntil
-} from "../../../lib/wait.js";
+    Duration,
+    waitUntil,
+} from "../utils/helpers.js";
 
-import Duration from "../../../lib/units/Duration.js";
-
-import { DeployRes } from "./types.js";
+import {
+    DeployRes,
+    RepositoryData
+} from "../types/index.js";
 
 
 export async function deployService(apiClient: MittwaldAPIV2Client,

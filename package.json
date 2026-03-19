@@ -4,6 +4,7 @@
   "description": "Reusable orchestration and API adapters for building and deploying containerized projects.",
   "main": "dist/orchestration/deploy_project.js",
   "types": "dist/types/index.d.ts",
+  "type": "module",
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc -w",
