@@ -23,10 +23,16 @@
   ],
   "author": "Lars Bergmann <l.bergmann@mittwald.de>",
   "license": "MIT",
-  "dependencies": {
-    "@mittwald/api-client": "^4.131.0"
+  "peerDependencies": {
+    "@mittwald/api-client": "^4.331.0"
+  },
+  "peerDependenciesMeta": {
+    "@mittwald/api-client": {
+      "optional": false
+    }
   },
   "devDependencies": {
+    "@mittwald/api-client": "^4.331.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.5.0",
     "jest": "^30.3.0",
