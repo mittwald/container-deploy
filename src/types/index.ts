@@ -1,6 +1,7 @@
 import {
     Duration,
 } from "../utils/helpers.js";
+import { MittwaldAPIV2Client } from "@mittwald/api-client";
 
 export type RepositoryData = {
   buildContext: string;
@@ -34,7 +35,7 @@ export type DeployResult = {
 };
 
 export type DeployOptions = {
-    apiClient: any;
+    apiClient: MittwaldAPIV2Client;
     projectId: string;
     waitTimeout: Duration;
 };

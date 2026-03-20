@@ -2,8 +2,8 @@
   "name": "container-deploy",
   "version": "0.1.0",
   "description": "Reusable orchestration and API adapters for building and deploying containerized projects.",
-  "main": "dist/orchestration/deploy_project.js",
-  "types": "dist/types/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
     "build": "tsc",
