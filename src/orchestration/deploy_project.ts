@@ -1,14 +1,16 @@
 import {
     setupProjectRegistry,
+} from "./registry_setup.js";
+import {
+    checkDocker,
+    checkRailpack,
     buildDockerImage,
-    localDockerPush
-} from "../entities/registry.js";
-
+    localDockerPush,
+} from "../entities/docker.js";
 
 import { checkRepository } from "../entities/repository.js";
 import { deployService } from "../entities/service.js";
 import { getProjectShortIdFromUuid } from "../entities/project.js";
-import { checkDocker, checkRailpack } from "../entities/registry.js";
 
 import type {
     DeployOptions,

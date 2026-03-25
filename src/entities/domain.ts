@@ -97,6 +97,24 @@ export async function waitForDomainReachable(
 }
 
 /**
+ * Waits for an ingress to be fully ready with assigned IPs and TLS.
+ * This is an alias for waitForDomainReachable, extracted for semantic clarity
+ * when used in orchestration modules.
+ *
+ * @param apiClient The Mittwald API client instance
+ * @param ingressId The ingress ID to check
+ * @param timeout The maximum time to wait for the ingress to be ready
+ * @returns true when the ingress is ready
+ */
+export async function waitForIngressReady(
+    apiClient: MittwaldAPIV2Client,
+    ingressId: string,
+    timeout: Duration = Duration.fromSeconds(300),
+): Promise<boolean> {
+    return await waitForDomainReachable(apiClient, ingressId, timeout);
+}
+
+/**
  * Combines domain creation and waiting for it to be reachable.
  * First creates the domain, then waits for it to be fully operational via API.
  *
@@ -117,6 +135,6 @@ export async function createAndWaitForDomain(
     timeout: Duration = Duration.fromSeconds(300),
 ): Promise<DomainData> {
     const domain = await createDomain(apiClient, projectId, hostname, serviceId, portProtocol);
-    await waitForDomainReachable(apiClient, domain.id, timeout);
+    await waitForIngressReady(apiClient, domain.id, timeout);
     return domain;
 }

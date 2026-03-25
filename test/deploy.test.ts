@@ -7,9 +7,18 @@ jest.mock("../src/entities/project", () => ({
   getProjectShortIdFromUuid: jest.fn(async () => "test-short-id"),
 }));
 
-jest.mock("../src/entities/registry", () => ({
+jest.mock("../src/entities/docker", () => ({
   checkDocker: jest.fn(),
   checkRailpack: jest.fn(),
+  buildDockerImage: jest.fn(async (registryData, repositoryData) => ({
+    ...repositoryData,
+    imageId: "sha256:test-image-id",
+    imageName: "registry.test.project.space/app-image:latest",
+  })),
+  localDockerPush: jest.fn(async () => undefined),
+}));
+
+jest.mock("../src/orchestration/registry_setup", () => ({
   setupProjectRegistry: jest.fn(async () => ({
     username: "test-user",
     password: "test-password",
@@ -19,12 +28,6 @@ jest.mock("../src/entities/registry", () => ({
     registry: { id: "registry-123" },
     created: true,
   })),
-  buildDockerImage: jest.fn(async (registryData, repositoryData) => ({
-    ...repositoryData,
-    imageId: "sha256:test-image-id",
-    imageName: "registry.test.project.space/app-image:latest",
-  })),
-  localDockerPush: jest.fn(async () => undefined),
 }));
 
 jest.mock("../src/entities/repository", () => ({
@@ -76,17 +79,19 @@ describe("deployProject integration test", () => {
       testProjectId
     );
 
-    const registryModule = require("../src/entities/registry");
-    expect(registryModule.checkDocker).toHaveBeenCalled();
-    expect(registryModule.checkRailpack).toHaveBeenCalled();
-    expect(registryModule.setupProjectRegistry).toHaveBeenCalledWith(
+    const dockerModule = require("../src/entities/docker");
+    expect(dockerModule.checkDocker).toHaveBeenCalled();
+    expect(dockerModule.checkRailpack).toHaveBeenCalled();
+    expect(dockerModule.buildDockerImage).toHaveBeenCalled();
+    expect(dockerModule.localDockerPush).toHaveBeenCalled();
+
+    const registrySetupModule = require("../src/orchestration/registry_setup");
+    expect(registrySetupModule.setupProjectRegistry).toHaveBeenCalledWith(
       options.apiClient,
       testProjectId,
       "test-short-id",
       testTimeout
     );
-    expect(registryModule.buildDockerImage).toHaveBeenCalled();
-    expect(registryModule.localDockerPush).toHaveBeenCalled();
 
     const repositoryModule = require("../src/entities/repository");
     expect(repositoryModule.checkRepository).toHaveBeenCalled();
@@ -103,8 +108,8 @@ describe("deployProject integration test", () => {
   });
 
   it("should handle errors from Docker checks", async () => {
-    const registryModule = require("../src/entities/registry");
-    registryModule.checkDocker.mockRejectedValueOnce(
+    const dockerModule = require("../src/entities/docker");
+    dockerModule.checkDocker.mockRejectedValueOnce(
       new Error("Docker is not installed")
     );
 
@@ -121,8 +126,8 @@ describe("deployProject integration test", () => {
   });
 
   it("should handle errors from registry setup", async () => {
-    const registryModule = require("../src/entities/registry");
-    registryModule.setupProjectRegistry.mockRejectedValueOnce(
+    const registrySetupModule = require("../src/orchestration/registry_setup");
+    registrySetupModule.setupProjectRegistry.mockRejectedValueOnce(
       new Error("Failed to setup registry")
     );
 
