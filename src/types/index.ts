@@ -39,3 +39,18 @@ export type DeployOptions = {
     projectId: string;
     waitTimeout: Duration;
 };
+
+export type DomainData = {
+    id: string;
+    hostname?: string;
+    [key: string]: any;
+};
+
+export type DomainCreateOptions = {
+    apiClient: MittwaldAPIV2Client;
+    projectId: string;
+    hostname: string;
+    serviceId: string;
+    portProtocol?: string;
+    timeout?: Duration;
+};
