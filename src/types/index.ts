@@ -1,7 +1,7 @@
 import {
     Duration,
 } from "../utils/helpers.js";
-import { MittwaldAPIV2Client } from "@mittwald/api-client";
+import { MittwaldAPIV2Client, type MittwaldAPIV2 } from "@mittwald/api-client";
 
 export type RepositoryData = {
   buildContext: string;
@@ -40,10 +40,17 @@ export type DeployOptions = {
     waitTimeout: Duration;
 };
 
-export type DomainData = {
+/**
+ * Ingress (domain) data from Mittwald API.
+ * Uses the native type from @mittwald/api-client for full compatibility.
+ * 
+ * Note: DomainData can represent an ingress at various stages:
+ * - After creation (has id and basic properties)
+ * - After waiting (has ips and tls information)
+ * - During listing (filtered by hostname)
+ */
+export type DomainData = Partial<MittwaldAPIV2.Components.Schemas.IngressIngress> & {
     id: string;
-    hostname?: string;
-    [key: string]: any;
 };
 
 export type DomainCreateOptions = {
