@@ -101,6 +101,11 @@ export async function setupProjectRegistry(
         // race conditions where subsequent operations fail because the registry endpoint is unreachable.
         // Polling the /v2/ endpoint actively verifies the service is responding over HTTP.
         await waitForDomainReachability(uri, timeout);
+        
+        // Step 5.1: Additional wait to allow DNS propagation and TLS certificate issuance
+        // WE reaching registry does not mean other machines can reach it immediately due to
+        // DNS caching and whatever. This wait is a pragmatic solution to mitigate these issues.
+        await new Promise(resolve => setTimeout(resolve, 2 * 60 * 1000));
 
         // Step 6: Register the registry in Mittwald API
         const registryCreationPayload = {
