@@ -19,7 +19,7 @@ import {
     checkProjectRegistry,
 } from "../entities/registry.js";
 import { deployServiceAs } from "../entities/service.js";
-import { createAndWaitForDomain } from "../entities/domain.js";
+import { createAndWaitForDomain, waitForDomainReachability } from "../entities/domain.js";
 
 import type { RegistryData } from "../types/index.js";
 
@@ -96,15 +96,11 @@ export async function setupProjectRegistry(
             timeout,
         );
 
-        // Step 5: Wait for DNS propagation and TLS (critical for stability, only needed for new domains)
-        // XXX: This whole ingress creation and waiting is flaky.
-        // The recommended time mentioned in mStudio is 2 hours!
-        // This step must be hardened to be idempotent, avoiding to
-        // create multiple registries/domains in case of retries.
-        // Optimization: Skip this wait if domain was reused (already has DNS/TLS)
-        if (!domainResult.wasReused) {
-            await new Promise(resolve => setTimeout(resolve, 2 * 60 * 1000));
-        }
+        // Step 5: Verify registry is HTTP-reachable before registering in API
+        // This ensures we don't register a registry that's not yet accessible, preventing
+        // race conditions where subsequent operations fail because the registry endpoint is unreachable.
+        // Polling the /v2/ endpoint actively verifies the service is responding over HTTP.
+        await waitForDomainReachability(uri, timeout);
 
         // Step 6: Register the registry in Mittwald API
         const registryCreationPayload = {

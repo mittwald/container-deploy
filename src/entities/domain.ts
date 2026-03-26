@@ -218,6 +218,49 @@ export async function updateDomainPathTarget(
 }
 
 /**
+ * Waits for a domain to be HTTP reachable and verifies it's a real Docker registry.
+ * Polls the Docker registry v2 API endpoint and validates the response headers
+ * to confirm the registry is actually responding with the expected Docker registry signature.
+ * This strict check prevents false positives from generic web servers.
+ *
+ * @param uri The domain URI to check (e.g., "registry.project.project.space")
+ * @param timeout The maximum time to wait for registry reachability
+ * @throws Error if registry does not respond correctly within the timeout period
+ */
+export async function waitForDomainReachability(
+    uri: string,
+    timeout: Duration = Duration.fromSeconds(300),
+): Promise<void> {
+    await waitUntil(async () => {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second HTTP timeout
+
+            const response = await fetch(`https://${uri}/v2/`, {
+                method: "HEAD",
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            // Verify this is a real Docker registry by checking for the Docker registry header
+            // This header is specifically returned by Docker registry v2 API
+            const dockerDistributionHeader = response.headers.get("docker-distribution-api-version");
+            
+            if (dockerDistributionHeader === "registry/2.0") {
+                return true;
+            }
+
+            // Not yet ready - return null to retry
+            return null;
+        } catch (error) {
+            // Connection errors or timeouts - retry
+            return null;
+        }
+    }, timeout);
+}
+
+/**
  * Combines domain creation and waiting for it to be reachable.
  * First checks if a domain with the given hostname already exists.
  * If it does, updates its target path and waits for readiness.
