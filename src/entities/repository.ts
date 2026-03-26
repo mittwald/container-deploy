@@ -86,6 +86,8 @@ export async function checkRepository() {
         // 1.1 Dockerfile is present, read it and skip railpack
         dockerfileContent = await fs.readFile(dockerfilePath, "utf-8");
     } else {
+        // XXX: We should check for .dockerignore and warn if none is present,
+        // to avoid accidentally including large or security relevant files in the build context
         // 1.2 No Dockerfile, try railpack for analysis
         railpackPlanPath = await runRailpack(projectRoot);
 
