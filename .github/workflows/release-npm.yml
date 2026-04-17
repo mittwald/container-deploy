@@ -1,0 +1,37 @@
+
+name: Create release
+
+permissions:
+  id-token: write
+
+on:
+  workflow_dispatch:
+    description: 'Release npm package'
+
+jobs:
+  release-npm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: yarn
+
+      - name: Set version in package json
+        run:
+          npm version ${GITHUB_REF#refs/tags/} --no-git-tag-version
+          --no-workspaces-update
+
+      - name: Build
+        run: yarn compile
+
+      - name: Publish
+        run: |
+          npm publish --access=public --tag=latest
