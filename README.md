@@ -575,6 +575,54 @@ The deployment pipeline follows these steps:
 6. **Image Push** – Push to configured registry
 7. **Service Deployment** – Deploy service to Mittwald infrastructure
 
+### Interaction
+
+The library can not be used as standalone-tool, but is embedded into `mw cli`,
+which is in turn called via github workflow.
+
+The full interaction looks like this:
+
+```mermaid
+flowchart LR
+    %% Mittwald cosmos grouping
+    subgraph "mittwald cosmos"
+
+	subgraph "Container Hosting"
+
+            %% Autodeploy Extension as part of mittwald cosmos
+            subgraph "Autodeploy Extension"
+                EXT[Autodeploy Extension]
+            end
+
+            %% Target Project as part of container hosting
+            subgraph "Target Project"
+                APP[Target Application]
+                REG[Docker Registry]
+            end
+
+	end
+    end
+
+    %% The wild: GitHub as external system
+    subgraph "GitHub (external git host)"
+        GH[Repository and Workflows]
+    end
+
+    %% Workflow steps—edges are simplified for readability
+
+    EXT -- links repo to project --> APP
+    EXT -- injects workflow --> GH
+
+    GH -- workflow calls extension --> EXT
+    EXT -- provides API token --> GH
+
+    GH -- builds image (railpack) --> APP
+    GH -- starts registry via API --> REG
+    GH -- pushes image --> REG
+    GH -- deploys new image via API --> APP
+    GH -- deployment success webhook --> EXT
+```
+
 ## License
 
 MIT License – see [LICENSE](LICENSE) file for details
