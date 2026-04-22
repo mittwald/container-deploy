@@ -154,7 +154,7 @@ export async function checkProjectRegistry(
 
     if (!registryIngress) {
         throw new Error(
-            "Registry ingress not found. Registry is not exposed via domain."
+            `Registry ingress not found. Registry is not exposed via domain. Available ingresses: ${JSON.stringify(ingressesResp.data, null, 2)}`
         );
     }
 
