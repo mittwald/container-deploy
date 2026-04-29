@@ -137,6 +137,23 @@ export async function checkProjectRegistry(
 
     const uri = registry.uri || "";
 
+    /*
+        NOTE: Circular dependency issue with API client generation.
+
+        The modern endpoint (GET /v2/ingresses) does not work in all scopes/contexts.
+        The deprecated endpoint (GET /v2/projects/{projectId}/ingresses) would be ideal,
+        but the API client generator explicitly filters out deprecated operations.
+
+        Reference: The @mittwald/api-client generator does not export deprecated operations
+        to force migration to new endpoints. However, the deprecated endpoint is sometimes
+        the only working solution for certain use cases.
+
+        Generator code: https://github.com/mittwald/api-client-js/blob/master/packages/generator/src/generation/model/paths/Path.ts
+        Commit: "Do not export deprecated operations" (88474cd, 3 years ago)
+
+        Future refactor needed: Either use raw HTTP client to access deprecated endpoint,
+        or wait for modern endpoint to support all required scopes.
+    */
     const ingressesResp = await apiClient.domain.ingressListIngresses({
         queryParameters: { projectId },
     });
