@@ -134,13 +134,26 @@ export async function findDomainByHostname(
     hostname: string,
 ): Promise<DomainData | null> {
     try {
-        const listResp = await apiClient.domain.ingressListIngresses({
-            queryParameters: { projectId },
-        });
-        assertStatus(listResp, 200);
+        /*
+            NOTE: Using deprecated endpoint for the same reason as in registry.ts.
+            The modern endpoint (GET /v2/ingresses) does not work in all scopes/contexts.
+            Using the underlying axios HTTP client to call the deprecated endpoint directly.
+            
+            Reference: https://github.com/mittwald/api-client-js/blob/master/packages/generator/src/generation/model/paths/Path.ts
+            Commit: "Do not export deprecated operations" (88474cd, 3 years ago)
+        */
+        const listResp = await apiClient.axios.get(
+            `/v2/projects/${projectId}/ingresses`
+        );
+
+        if (listResp.status !== 200) {
+            throw new Error(
+                `Failed to fetch ingresses for project ${projectId}. Status: ${listResp.status}`
+            );
+        }
 
         const ingresses = listResp.data as DomainData[];
-        const existingIngress = ingresses.find((ing) => ing.hostname === hostname);
+        const existingIngress = ingresses.find((ing: any) => ing.hostname === hostname);
 
         return existingIngress || null;
     } catch (error) {

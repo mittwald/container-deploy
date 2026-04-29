@@ -137,24 +137,48 @@ export async function checkProjectRegistry(
 
     const uri = registry.uri || "";
 
-    const ingressesResp = await apiClient.domain.ingressListIngresses({
-        queryParameters: { projectId },
-    });
-    assertStatus(ingressesResp, 200);
+    /*
+        NOTE: Circular dependency issue with API client generation.
 
-    const registryIngress = ingressesResp.data.find((ingress) => {
-        return ingress.paths?.some((path) => {
+        The modern endpoint (GET /v2/ingresses) does not work in all scopes/contexts.
+        The deprecated endpoint (GET /v2/projects/{projectId}/ingresses) would be ideal,
+        but the API client generator explicitly filters out deprecated operations.
+
+        Reference: The @mittwald/api-client generator does not export deprecated operations
+        to force migration to new endpoints. However, the deprecated endpoint is sometimes
+        the only working solution for certain use cases.
+
+        Generator code: https://github.com/mittwald/api-client-js/blob/master/packages/generator/src/generation/model/paths/Path.ts
+        Commit: "Do not export deprecated operations" (88474cd, 3 years ago)
+
+        Solution: Use the underlying axios HTTP client to call the deprecated endpoint directly.
+        Authentication is automatically handled via axios interceptors set up by the API client.
+    */
+    const ingressesResp = await apiClient.axios.get(
+        `/v2/projects/${projectId}/ingresses`
+    );
+    
+    if (ingressesResp.status !== 200) {
+        throw new Error(
+            `Failed to fetch ingresses for project ${projectId}. Status: ${ingressesResp.status}`
+        );
+    }
+
+    const ingresses = ingressesResp.data as any[];
+    const registryIngress = ingresses.find((ingress: any) => {
+        return ingress.paths?.some((path: any) => {
             const target = path.target as any;
             return (
-                target?.container?.id === registryServiceId &&
-                target?.container?.portProtocol === MW_REGISTRY_PORT_PROTOCOL
+                'container' in target &&
+                target.container?.id === registryServiceId &&
+                target.container?.portProtocol === MW_REGISTRY_PORT_PROTOCOL
             );
         });
     });
 
     if (!registryIngress) {
         throw new Error(
-            `Registry ingress not found. Registry is not exposed via domain. Available ingresses: ${JSON.stringify(ingressesResp.data, null, 2)}`
+            `Registry ingress not found. Registry is not exposed via domain. Available ingresses: ${JSON.stringify(ingresses, null, 2)}`
         );
     }
 
