@@ -1,5 +1,5 @@
 {
-  "name": "container-deploy",
+  "name": "@mittwald/container-deploy",
   "version": "0.1.0",
   "description": "Reusable orchestration and API adapters for building and deploying containerized projects.",
   "main": "dist/index.js",
