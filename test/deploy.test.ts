@@ -103,7 +103,8 @@ describe("deployProject integration test", () => {
       expect.objectContaining({
         imageName: "registry.test.project.space/app-image:latest",
       }),
-      testTimeout
+      testTimeout,
+      undefined
     );
   });
 
@@ -140,6 +141,54 @@ describe("deployProject integration test", () => {
 
     await expect(deployProject(options)).rejects.toThrow(
       "Failed to setup registry"
+    );
+  });
+
+  it("should pass custom environment variables to deployService", async () => {
+    const testProjectId = "test-project-uuid";
+    const customEnv = {
+      NODE_ENV: "production",
+      LOG_LEVEL: "debug",
+    };
+
+    const options: DeployOptions = {
+      projectId: testProjectId,
+      apiClient: {} as any,
+      waitTimeout: Duration.fromSeconds(30),
+      environment: customEnv,
+    };
+
+    await deployProject(options);
+
+    const serviceModule = require("../src/entities/service");
+    expect(serviceModule.deployService).toHaveBeenCalledWith(
+      options.apiClient,
+      testProjectId,
+      expect.any(Object),
+      options.waitTimeout,
+      customEnv
+    );
+  });
+
+  it("should allow deployService to be called without environment variables", async () => {
+    const testProjectId = "test-project-uuid";
+
+    const options: DeployOptions = {
+      projectId: testProjectId,
+      apiClient: {} as any,
+      waitTimeout: Duration.fromSeconds(30),
+      // environment intentionally omitted
+    };
+
+    await deployProject(options);
+
+    const serviceModule = require("../src/entities/service");
+    expect(serviceModule.deployService).toHaveBeenCalledWith(
+      options.apiClient,
+      testProjectId,
+      expect.any(Object),
+      options.waitTimeout,
+      undefined
     );
   });
 });

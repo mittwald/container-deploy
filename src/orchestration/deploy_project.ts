@@ -40,6 +40,7 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
     opts.projectId,
     repositoryData,
     opts.waitTimeout,
+    opts.environment,
   );
 
   return { deployedServiceId: deployRes.deployedServiceId, serviceName: deployRes.serviceName };

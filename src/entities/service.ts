@@ -22,7 +22,8 @@ import {
 export async function deployService(apiClient: MittwaldAPIV2Client,
                                     projectId: string,
                                     repositoryData: RepositoryData,
-                                    timeout: Duration) {
+                                    timeout: Duration,
+                                    environment?: Record<string, string>) {
 
     let existing: boolean = false;
     const serviceName = `app-${projectId}`;
@@ -48,6 +49,7 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
         ports: repositoryData.ports,
         environment: {
             PORT: "80",  // XXX: nothing clever, just match fallback so target is correctly set in the ingress.
+            ...environment,
         },
     };
 
