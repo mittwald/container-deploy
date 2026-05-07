@@ -38,6 +38,7 @@ export type DeployOptions = {
     apiClient: MittwaldAPIV2Client;
     projectId: string;
     waitTimeout: Duration;
+    environment?: Record<string, string>;
 };
 
 /**

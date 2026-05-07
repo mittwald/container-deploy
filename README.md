@@ -509,6 +509,16 @@ npm test -- --watch
 
 Tests are configured with Jest and ts-jest for TypeScript support. Current test coverage includes full integration tests for the `deployProject` function.
 
+### Development Branches
+
+This package can be tested directly from git branches before publishing to npm:
+
+```json
+"@mittwald/container-deploy": "github:mittwald/container-deploy#branch-name"
+```
+
+For this to work, the dist folder must be committed after building. When released to npm, users receive the published version and don't need to worry about this.
+
 ## Type Definitions
 
 ### `DeployOptions`
