@@ -24,11 +24,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Set version in package json
-        run:
-          npm version ${GITHUB_REF#refs/tags/} --no-git-tag-version
-          --no-workspaces-update
-
       - name: Build
         run: npm run build
 
