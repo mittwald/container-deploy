@@ -11,35 +11,69 @@ import {
     RepositoryData,
 } from "../types/index.js";
 
-export function checkDocker() {
+interface ToolCheckResult {
+    available: boolean;
+    error?: string;
+}
+
+export function checkDocker(): ToolCheckResult {
     /*
         Check if Docker is installed and available in the system PATH.
-        Throws an error with actionable guidance if Docker is not found.
+        Returns a result object indicating availability and error details if unavailable.
     */
     try {
         execSync("docker --version", { stdio: "pipe" });
+        return { available: true };
     } catch (error) {
-        throw new Error(
-            "Docker is not installed or not available in your PATH. " +
-            "Please install Docker from https://www.docker.com/products/docker-desktop or " +
-            "ensure it is properly installed and available in your system PATH."
-        );
+        return {
+            available: false,
+            error:
+                "Docker is not installed or not available in your PATH. " +
+                "Please install Docker from https://www.docker.com/products/docker-desktop or " +
+                "ensure it is properly installed and available in your system PATH.",
+        };
     }
 }
 
-export function checkRailpack() {
+export function checkRailpack(): ToolCheckResult {
     /*
         Check if Railpack is installed and available in the system PATH.
-        Throws an error with actionable guidance if Railpack is not found.
+        Returns a result object indicating availability and error details if unavailable.
     */
     try {
         execSync("railpack --version", { stdio: "pipe" });
+        return { available: true };
     } catch (error) {
-        throw new Error(
-            "Railpack is not installed or not available in your PATH. " +
-            "Please install Railpack from https://railpack.io or " +
-            "ensure it is properly installed and available in your system PATH."
-        );
+        return {
+            available: false,
+            error:
+                "Railpack is not installed or not available in your PATH. " +
+                "Please install Railpack from https://railpack.io or " +
+                "ensure it is properly installed and available in your system PATH.",
+        };
+    }
+}
+
+export function checkRequiredTools(): void {
+    /*
+        Validate that both Docker and Railpack are installed.
+        Collects all missing tools and throws a single comprehensive error.
+    */
+    const dockerCheck = checkDocker();
+    const railpackCheck = checkRailpack();
+
+    const missingTools: string[] = [];
+
+    if (!dockerCheck.available && dockerCheck.error) {
+        missingTools.push(dockerCheck.error);
+    }
+
+    if (!railpackCheck.available && railpackCheck.error) {
+        missingTools.push(railpackCheck.error);
+    }
+
+    if (missingTools.length > 0) {
+        throw new Error(missingTools.join("\n\n"));
     }
 }
 

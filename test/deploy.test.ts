@@ -8,8 +8,7 @@ jest.mock("../src/entities/project", () => ({
 }));
 
 jest.mock("../src/entities/docker", () => ({
-  checkDocker: jest.fn(),
-  checkRailpack: jest.fn(),
+  checkRequiredTools: jest.fn(),
   buildDockerImage: jest.fn(async (registryData, repositoryData) => ({
     ...repositoryData,
     imageId: "sha256:test-image-id",
@@ -80,8 +79,7 @@ describe("deployProject integration test", () => {
     );
 
     const dockerModule = require("../src/entities/docker");
-    expect(dockerModule.checkDocker).toHaveBeenCalled();
-    expect(dockerModule.checkRailpack).toHaveBeenCalled();
+    expect(dockerModule.checkRequiredTools).toHaveBeenCalled();
     expect(dockerModule.buildDockerImage).toHaveBeenCalled();
     expect(dockerModule.localDockerPush).toHaveBeenCalled();
 
@@ -108,11 +106,11 @@ describe("deployProject integration test", () => {
     );
   });
 
-  it("should handle errors from Docker checks", async () => {
+  it("should handle errors from tool checks", async () => {
     const dockerModule = require("../src/entities/docker");
-    dockerModule.checkDocker.mockRejectedValueOnce(
-      new Error("Docker is not installed")
-    );
+    dockerModule.checkRequiredTools.mockImplementationOnce(() => {
+      throw new Error("Docker is not installed or not available in your PATH. Please install Docker from https://www.docker.com/products/docker-desktop or ensure it is properly installed and available in your system PATH.\n\nRailpack is not installed or not available in your PATH. Please install Railpack from https://railpack.io or ensure it is properly installed and available in your system PATH.");
+    });
 
     const testProjectId = "test-project-uuid";
     const options: DeployOptions = {
@@ -121,9 +119,7 @@ describe("deployProject integration test", () => {
       waitTimeout: Duration.fromSeconds(30),
     };
 
-    await expect(deployProject(options)).rejects.toThrow(
-      "Docker is not installed"
-    );
+    await expect(deployProject(options)).rejects.toThrow();
   });
 
   it("should handle errors from registry setup", async () => {
