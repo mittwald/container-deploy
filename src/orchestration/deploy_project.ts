@@ -2,8 +2,7 @@ import {
     setupProjectRegistry,
 } from "./registry_setup.js";
 import {
-    checkDocker,
-    checkRailpack,
+    checkRequiredTools,
     buildDockerImage,
     localDockerPush,
 } from "../entities/docker.js";
@@ -21,8 +20,7 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
 
   const projectShortId = await getProjectShortIdFromUuid(opts.apiClient, opts.projectId);
 
-  await checkDocker();
-  await checkRailpack();
+  checkRequiredTools();
 
   const registryData = await setupProjectRegistry(
     opts.apiClient,

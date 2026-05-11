@@ -9,7 +9,8 @@ export {
   buildDockerImage,
   localDockerPush,
   checkDocker,
-  checkRailpack
+  checkRailpack,
+  checkRequiredTools
 } from "./entities/docker.js";
 
 // Entity operations
