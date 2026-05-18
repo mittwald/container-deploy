@@ -56,4 +56,4 @@ jobs:
 
       - name: Publish
         run: |
-          npm publish --access=public --tag=latest --provenance
+          npm publish --access=public --tag=latest
