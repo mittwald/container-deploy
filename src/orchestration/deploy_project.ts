@@ -29,7 +29,7 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
     opts.waitTimeout,
   );
 
-  let repositoryData = await checkRepository();
+  let repositoryData = await checkRepository(opts.environment);
   repositoryData = await buildDockerImage(registryData, repositoryData);
   await localDockerPush(repositoryData, registryData);
 

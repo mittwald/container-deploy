@@ -71,7 +71,7 @@ function extractPortsFromDockerfile(dockerfileContent: string): string[] {
     return portMappings;
 }
 
-export async function checkRepository() {
+export async function checkRepository(environment?: Record<string, string>) {
     /*
         Check repository expected in current folder context.
     */
@@ -103,9 +103,16 @@ export async function checkRepository() {
     }
 
     // Extract ports from the Dockerfile and create proper host:container mappings
-    // If we created the default Dockerfile, we know it exposes port 80
+    // If environment.PORT is present and valid, it is always the primary mapping.
     const ports = extractPortsFromDockerfile(dockerfileContent);
-    if (ports.length === 0) {
+    const portFromEnvRaw = environment?.PORT;
+    const portFromEnv = portFromEnvRaw ? parseInt(portFromEnvRaw, 10) : NaN;
+
+    if (!isNaN(portFromEnv) && portFromEnv > 0) {
+        const primaryPortMapping = `${portFromEnv}:${portFromEnv}/tcp`;
+        const remainingPorts = ports.filter(port => port !== primaryPortMapping);
+        ports.splice(0, ports.length, primaryPortMapping, ...remainingPorts);
+    } else if (ports.length === 0) {
         ports.push("80:80/tcp");
     }
 

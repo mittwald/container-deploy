@@ -92,7 +92,7 @@ describe("deployProject integration test", () => {
     );
 
     const repositoryModule = require("../src/entities/repository");
-    expect(repositoryModule.checkRepository).toHaveBeenCalled();
+    expect(repositoryModule.checkRepository).toHaveBeenCalledWith(undefined);
 
     const serviceModule = require("../src/entities/service");
     expect(serviceModule.deployService).toHaveBeenCalledWith(
@@ -156,6 +156,9 @@ describe("deployProject integration test", () => {
 
     await deployProject(options);
 
+    const repositoryModule = require("../src/entities/repository");
+    expect(repositoryModule.checkRepository).toHaveBeenCalledWith(customEnv);
+
     const serviceModule = require("../src/entities/service");
     expect(serviceModule.deployService).toHaveBeenCalledWith(
       options.apiClient,
@@ -177,6 +180,9 @@ describe("deployProject integration test", () => {
     };
 
     await deployProject(options);
+
+    const repositoryModule = require("../src/entities/repository");
+    expect(repositoryModule.checkRepository).toHaveBeenCalledWith(undefined);
 
     const serviceModule = require("../src/entities/service");
     expect(serviceModule.deployService).toHaveBeenCalledWith(
