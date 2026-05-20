@@ -1,6 +1,6 @@
 {
   "name": "@mittwald/container-deploy",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Reusable orchestration and API adapters for building and deploying containerized projects.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
