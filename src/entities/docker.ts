@@ -24,6 +24,10 @@ const MANAGED_BUILDER_NAME = "container-deploy-builder";
 // (classic builder) cannot, so it is intentionally excluded.
 const BUILDKIT_DRIVERS = new Set(["docker-container", "remote", "kubernetes"]);
 
+// All images are built for linux/amd64 regardless of the host architecture,
+// since that is the platform the images are deployed to.
+const TARGET_PLATFORM = "linux/amd64";
+
 interface BuildxNode {
     Status?: string;
 }
@@ -130,6 +134,15 @@ function ensureBuildkitBuilder(): string {
 }
 
 /**
+ * Detect whether the current host runs on an ARM architecture.
+ * On such hosts a plain `docker build` cannot produce linux/amd64
+ * images reliably, so we fall back to `docker buildx`.
+ */
+function isArmHost(): boolean {
+    return process.arch === "arm" || process.arch === "arm64";
+}
+
+/**
  * Checks if Docker is installed and available in the system PATH. Returns a
  * result object indicating availability and error details if unavailable.
  */
@@ -207,14 +220,34 @@ export async function localDockerBuild(
     const registryHost = registryData.uri;
     const imageName = `${registryHost}/app-image:latest`;
 
-    const buildResult = spawnSync("docker", [
-        "build",
-        "-t",
-        imageName,
-        "-f",
-        repositoryData.dockerfilePath,
-        repositoryData.buildContext,
-    ], {
+    // Always build for linux/amd64. On ARM hosts a plain `docker build`
+    // cannot reliably cross-build, so use `docker buildx` with an explicit
+    // platform and load the result into the local Docker image store.
+    const buildArgs = isArmHost()
+        ? [
+              "buildx",
+              "build",
+              "--platform",
+              TARGET_PLATFORM,
+              "--load",
+              "-t",
+              imageName,
+              "-f",
+              repositoryData.dockerfilePath,
+              repositoryData.buildContext,
+          ]
+        : [
+              "build",
+              "--platform",
+              TARGET_PLATFORM,
+              "-t",
+              imageName,
+              "-f",
+              repositoryData.dockerfilePath,
+              repositoryData.buildContext,
+          ];
+
+    const buildResult = spawnSync("docker", buildArgs, {
         cwd: repositoryData.buildContext,
         stdio: "inherit",
     });
@@ -277,6 +310,9 @@ export async function localBuildWithRailpack(
         "build",
         "--builder",
         builder,
+        // Always build for linux/amd64 regardless of the host architecture.
+        "--platform",
+        TARGET_PLATFORM,
         "--build-arg",
         "BUILDKIT_SYNTAX=ghcr.io/railwayapp/railpack-frontend",
         "-f",
