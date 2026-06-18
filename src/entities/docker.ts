@@ -16,11 +16,124 @@ interface ToolCheckResult {
     error?: string;
 }
 
+// Name of the Buildx builder we create when no reusable one is found.
+const MANAGED_BUILDER_NAME = "container-deploy-builder";
+
+// Buildx drivers backed by a real BuildKit instance, which is required to run
+// the Railpack frontend (custom BUILDKIT_SYNTAX). The default `docker` driver
+// (classic builder) cannot, so it is intentionally excluded.
+const BUILDKIT_DRIVERS = new Set(["docker-container", "remote", "kubernetes"]);
+
+interface BuildxNode {
+    Status?: string;
+}
+
+interface BuildxBuilder {
+    Name?: string;
+    Driver?: string;
+    Current?: boolean;
+    Nodes?: BuildxNode[];
+}
+
+/**
+ * Returns the name of an existing Buildx builder backed by a BuildKit
+ * instance (e.g. one the user already created, or a running remote builder),
+ * or `null` if none is available.
+ *
+ * Parses `docker buildx ls --format=json`, which emits one JSON object per
+ * line. A builder with a `running` node is preferred over an inactive one. If
+ * `--format=json` is unsupported (older Buildx), the command fails or emits
+ * unparseable output and we fall back to creating our own builder.
+ */
+function findBuildkitBuilder(): string | null {
+    const listResult = spawnSync("docker", ["buildx", "ls", "--format=json"], {
+        stdio: ["pipe", "pipe", "pipe"],
+        encoding: "utf-8",
+    });
+
+    if (listResult.status !== 0 || !listResult.stdout) {
+        return null;
+    }
+
+    const candidates: BuildxBuilder[] = [];
+    for (const line of listResult.stdout.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            continue;
+        }
+
+        let builder: BuildxBuilder;
+        try {
+            builder = JSON.parse(trimmed);
+        } catch {
+            // Not JSON (e.g. older Buildx ignoring --format); skip the line.
+            continue;
+        }
+
+        if (builder.Name && builder.Driver && BUILDKIT_DRIVERS.has(builder.Driver)) {
+            candidates.push(builder);
+        }
+    }
+
+    const running = candidates.filter((b) =>
+        b.Nodes?.some((node) => node.Status === "running")
+    );
+
+    const chosen =
+        running.find((b) => b.Current) ?? running[0] ?? candidates[0];
+
+    return chosen?.Name ?? null;
+}
+
+/**
+ * Ensures a Buildx builder backed by a BuildKit instance is available. Such a
+ * driver is required for the Railpack frontend (custom BUILDKIT_SYNTAX) and
+ * multi-platform builds; the default `docker` driver does not support them.
+ *
+ * Reuses an existing BuildKit-backed builder if one is present (e.g. the user
+ * already ran `docker buildx create --use`), otherwise creates a dedicated
+ * one with the `docker-container` driver. Returns the builder name to pass via
+ * `--builder`, leaving the user's default builder untouched.
+ */
+function ensureBuildkitBuilder(): string {
+    const existing = findBuildkitBuilder();
+    if (existing) {
+        return existing;
+    }
+
+    const createResult = spawnSync(
+        "docker",
+        [
+            "buildx",
+            "create",
+            "--name",
+            MANAGED_BUILDER_NAME,
+            "--driver",
+            "docker-container",
+        ],
+        { stdio: ["pipe", "pipe", "pipe"], encoding: "utf-8" }
+    );
+
+    if (createResult.status !== 0) {
+        // A builder with this name may already exist from a previous run;
+        // tolerate that and reuse it. Any other failure is fatal.
+        const stderr = createResult.stderr ?? "";
+        if (!stderr.includes("existing instance")) {
+            throw new Error(
+                "Failed to create a Buildx builder for the Railpack build: " +
+                    (stderr.trim() || createResult.error?.message || "unknown error")
+            );
+        }
+    }
+
+    return MANAGED_BUILDER_NAME;
+}
+
+/**
+ * Checks if Docker is installed and available in the system PATH. Returns a
+ * result object indicating availability and error details if unavailable.
+ */
 export function checkDocker(): ToolCheckResult {
-    /*
-        Check if Docker is installed and available in the system PATH.
-        Returns a result object indicating availability and error details if unavailable.
-    */
     try {
         execSync("docker --version", { stdio: "pipe" });
         return { available: true };
@@ -35,11 +148,11 @@ export function checkDocker(): ToolCheckResult {
     }
 }
 
+/**
+ * Checks if Railpack is installed and available in the system PATH. Returns a
+ * result object indicating availability and error details if unavailable.
+ */
 export function checkRailpack(): ToolCheckResult {
-    /*
-        Check if Railpack is installed and available in the system PATH.
-        Returns a result object indicating availability and error details if unavailable.
-    */
     try {
         execSync("railpack --version", { stdio: "pipe" });
         return { available: true };
@@ -54,11 +167,11 @@ export function checkRailpack(): ToolCheckResult {
     }
 }
 
+/**
+ * Validates that both Docker and Railpack are installed. Collects all missing
+ * tools and throws a single comprehensive error.
+ */
 export function checkRequiredTools(): void {
-    /*
-        Validate that both Docker and Railpack are installed.
-        Collects all missing tools and throws a single comprehensive error.
-    */
     const dockerCheck = checkDocker();
     const railpackCheck = checkRailpack();
 
@@ -77,15 +190,14 @@ export function checkRequiredTools(): void {
     }
 }
 
+/**
+ * Builds a Docker image from the local repository. Later down the line this
+ * might be called remotely.
+ */
 export async function localDockerBuild(
     registryData: RegistryData,
     repositoryData: RepositoryData,
 ) {
-    /*
-        Build docker image from local repository.
-        Later down the line this might be called remotely.
-    */
-
     if (!repositoryData.dockerfilePath || !repositoryData.buildContext) {
         throw new Error(
             "Docker build requires dockerfilePath and buildContext"
@@ -135,16 +247,15 @@ export async function localDockerBuild(
     return repositoryData;
 }
 
+/**
+ * Builds a Docker image using Railpack and Docker Buildx (BuildKit). This path
+ * is more efficient for complex projects and provides better caching and
+ * multi-platform builds.
+ */
 export async function localBuildWithRailpack(
     registryData: RegistryData,
     repositoryData: RepositoryData,
 ) {
-    /*
-        Build Docker image using Railpack and Docker Buildx (buildkit).
-        This path is more efficient for complex projects and provides
-        better caching and multi-platform builds.
-    */
-
     if (!repositoryData.railpackPlanPath) {
         throw new Error("Railpack plan path is required for buildx build");
     }
@@ -156,9 +267,16 @@ export async function localBuildWithRailpack(
     const registryHost = registryData.uri;
     const imageName = `${registryHost}/app-image:latest`;
 
+    // The Railpack frontend requires the `docker-container` driver, which the
+    // default Buildx builder does not provide. Reuse an existing one or create
+    // a dedicated builder so the build works without manual setup.
+    const builder = ensureBuildkitBuilder();
+
     const buildResult = spawnSync("docker", [
         "buildx",
         "build",
+        "--builder",
+        builder,
         "--build-arg",
         "BUILDKIT_SYNTAX=ghcr.io/railwayapp/railpack-frontend",
         "-f",
@@ -199,17 +317,16 @@ export async function localBuildWithRailpack(
     return repositoryData;
 }
 
+/**
+ * Entry point for building Docker images. Checks if `railpackPlanPath` is
+ * available and decides which build method to use:
+ * - If `railpackPlanPath` exists: uses Buildx with Railpack.
+ * - Otherwise: falls back to a standard Docker build.
+ */
 export async function buildDockerImage(
     registryData: RegistryData,
     repositoryData: RepositoryData,
 ) {
-    /*
-        Entry point for building Docker images. Checks if railpackPlanPath
-        is available and decides which build method to use:
-        - If railpackPlanPath exists: uses buildx with railpack
-        - Otherwise: falls back to standard Docker build
-    */
-
     if (repositoryData.railpackPlanPath) {
         return await localBuildWithRailpack(registryData, repositoryData);
     }
@@ -217,15 +334,14 @@ export async function buildDockerImage(
     return await localDockerBuild(registryData, repositoryData);
 }
 
+/**
+ * Pushes the built Docker image to the registry. Logs in to the registry first
+ * with the provided credentials.
+ */
 export async function localDockerPush(
     repositoryData: RepositoryData,
     registryData: RegistryData,
 ) {
-    /*
-        Push the built Docker image to the registry.
-        Logs in to the registry first with provided credentials.
-    */
-
     // XXX: removing protocol shouldn't be needed
     const registryHost = registryData.uri.replace(/^https?:\/\//, "");
     const loginResult = spawnSync(
