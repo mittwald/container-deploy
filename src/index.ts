@@ -10,8 +10,11 @@ export {
   localDockerPush,
   checkDocker,
   checkRailpack,
-  checkRequiredTools
+  checkRequiredTools,
+  DEFAULT_IMAGE_NAME,
+  DEFAULT_IMAGE_TAG
 } from "./entities/docker.js";
+export type { ImageOptions } from "./entities/docker.js";
 
 // Entity operations
 export { 
