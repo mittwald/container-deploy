@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/mittwald/container-deploy/compare/v1.4.0...v1.5.0) (2026-06-19)
+
+
+### Features
+
+* **docker:** make image name and tag configurable ([#14](https://github.com/mittwald/container-deploy/issues/14)) ([8748b9d](https://github.com/mittwald/container-deploy/commit/8748b9dc86fa97afa6beaf48aaf699441773b316))
+
 # [1.4.0](https://github.com/mittwald/container-deploy/compare/v1.3.0...v1.4.0) (2026-06-19)
 
 
