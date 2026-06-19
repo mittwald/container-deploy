@@ -205,6 +205,8 @@ Complete deployment pipeline: registry setup → Docker build → push → servi
 - `apiClient` – Mittwald API v2 client instance
 - `projectId` – UUID of target project
 - `waitTimeout` – Maximum time to wait for operations
+- `imageName` _(optional)_ – Name of the built image (default: `app-image`)
+- `imageTag` _(optional)_ – Tag of the built image (default: `latest`)
 
 **Returns:**
 ```typescript
@@ -384,6 +386,9 @@ export interface DeployOptions {
   apiClient: MittwaldAPIV2Client;
   projectId: string;
   waitTimeout: Duration;
+  environment?: Record<string, string>;
+  imageName?: string;  // Image name (default: "app-image")
+  imageTag?: string;   // Image tag (default: "latest")
 }
 ```
 
@@ -527,6 +532,9 @@ For this to work, the dist folder must be committed after building. When release
   apiClient: any;           // Mittwald API client
   projectId: string;        // Project UUID
   waitTimeout: Duration;    // Deployment timeout
+  environment?: Record<string, string>;  // Build/runtime environment
+  imageName?: string;       // Image name (default: "app-image")
+  imageTag?: string;        // Image tag (default: "latest")
 }
 ```
 

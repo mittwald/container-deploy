@@ -30,7 +30,10 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
   );
 
   let repositoryData = await checkRepository(opts.environment);
-  repositoryData = await buildDockerImage(registryData, repositoryData);
+  repositoryData = await buildDockerImage(registryData, repositoryData, {
+    name: opts.imageName,
+    tag: opts.imageTag,
+  });
   await localDockerPush(repositoryData, registryData);
 
   const deployRes = await deployService(

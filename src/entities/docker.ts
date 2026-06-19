@@ -16,6 +16,26 @@ interface ToolCheckResult {
     error?: string;
 }
 
+// Defaults used for the built image reference when the caller does not
+// override them. The full reference is `${registryHost}/${name}:${tag}`.
+export const DEFAULT_IMAGE_NAME = "app-image";
+export const DEFAULT_IMAGE_TAG = "latest";
+
+export interface ImageOptions {
+    name?: string;
+    tag?: string;
+}
+
+/**
+ * Builds the fully-qualified image reference (`registry/name:tag`) for a build,
+ * falling back to the default name and tag when they are not provided.
+ */
+function buildImageReference(registryHost: string, imageOptions?: ImageOptions): string {
+    const name = imageOptions?.name || DEFAULT_IMAGE_NAME;
+    const tag = imageOptions?.tag || DEFAULT_IMAGE_TAG;
+    return `${registryHost}/${name}:${tag}`;
+}
+
 // Name of the Buildx builder we create when no reusable one is found.
 const MANAGED_BUILDER_NAME = "container-deploy-builder";
 
@@ -210,6 +230,7 @@ export function checkRequiredTools(): void {
 export async function localDockerBuild(
     registryData: RegistryData,
     repositoryData: RepositoryData,
+    imageOptions?: ImageOptions,
 ) {
     if (!repositoryData.dockerfilePath || !repositoryData.buildContext) {
         throw new Error(
@@ -218,7 +239,7 @@ export async function localDockerBuild(
     }
 
     const registryHost = registryData.uri;
-    const imageName = `${registryHost}/app-image:latest`;
+    const imageName = buildImageReference(registryHost, imageOptions);
 
     // Always build for linux/amd64. On ARM hosts a plain `docker build`
     // cannot reliably cross-build, so use `docker buildx` with an explicit
@@ -288,6 +309,7 @@ export async function localDockerBuild(
 export async function localBuildWithRailpack(
     registryData: RegistryData,
     repositoryData: RepositoryData,
+    imageOptions?: ImageOptions,
 ) {
     if (!repositoryData.railpackPlanPath) {
         throw new Error("Railpack plan path is required for buildx build");
@@ -298,7 +320,7 @@ export async function localBuildWithRailpack(
     }
 
     const registryHost = registryData.uri;
-    const imageName = `${registryHost}/app-image:latest`;
+    const imageName = buildImageReference(registryHost, imageOptions);
 
     // The Railpack frontend requires the `docker-container` driver, which the
     // default Buildx builder does not provide. Reuse an existing one or create
@@ -362,12 +384,13 @@ export async function localBuildWithRailpack(
 export async function buildDockerImage(
     registryData: RegistryData,
     repositoryData: RepositoryData,
+    imageOptions?: ImageOptions,
 ) {
     if (repositoryData.railpackPlanPath) {
-        return await localBuildWithRailpack(registryData, repositoryData);
+        return await localBuildWithRailpack(registryData, repositoryData, imageOptions);
     }
 
-    return await localDockerBuild(registryData, repositoryData);
+    return await localDockerBuild(registryData, repositoryData, imageOptions);
 }
 
 /**

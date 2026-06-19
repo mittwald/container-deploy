@@ -39,6 +39,10 @@ export type DeployOptions = {
     projectId: string;
     waitTimeout: Duration;
     environment?: Record<string, string>;
+    /** Image name to build and push (default: `app-image`). */
+    imageName?: string;
+    /** Image tag to build and push (default: `latest`). */
+    imageTag?: string;
 };
 
 /**
