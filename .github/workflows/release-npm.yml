@@ -1,8 +1,9 @@
 name: Release and Publish to npm (OIDC)
 
 on:
-  workflow_dispatch:
-    description: "Release npm package: bump version, tag, create GitHub release, publish to npm"
+  push:
+    tags:
+      - v*
 
 permissions:
   id-token: write
@@ -11,8 +12,6 @@ permissions:
 jobs:
   release-npm:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -24,27 +23,20 @@ jobs:
           registry-url: https://registry.npmjs.org
           always-auth: true # Ensure npm always sends auth (used with OIDC)
 
-      - name: Configure git user for bot commit
-        run: |
-          git config user.name "mittwald-machine[bot]"
-          git config user.email "mittwald-machine@users.noreply.github.com"
-
       - name: Install dependencies
         run: npm ci
 
       - name: Build
         run: npm run build
 
-      - name: Bump minor version and create tag
-        id: version
-        run: |
-          NEW_TAG=$(npm version minor -m "chore(release): v%s [skip ci]")
-          echo "new_tag=${NEW_TAG}" >> $GITHUB_OUTPUT
+      - name: Set version in package json
+        run:
+          npm version ${GITHUB_REF#refs/tags/} --no-git-tag-version
+          --no-workspaces-update
 
-      - name: Push version commit and tag
+      - name: Publish
         run: |
-          git push origin master
-          git push origin --tags
+          npm publish --access=public --tag=latest
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -54,6 +46,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish
-        run: |
-          npm publish --access=public --tag=latest
