@@ -207,6 +207,7 @@ Complete deployment pipeline: registry setup → Docker build → push → servi
 - `waitTimeout` – Maximum time to wait for operations
 - `imageName` _(optional)_ – Name of the built image (default: `app-image`)
 - `imageTag` _(optional)_ – Tag of the built image (default: `latest`)
+- `serviceName` _(optional)_ – Name of the deployed service (default: `app-${projectId}`). Set this to run multiple parallel deployments in the same project.
 
 **Returns:**
 ```typescript
@@ -535,6 +536,7 @@ For this to work, the dist folder must be committed after building. When release
   environment?: Record<string, string>;  // Build/runtime environment
   imageName?: string;       // Image name (default: "app-image")
   imageTag?: string;        // Image tag (default: "latest")
+  serviceName?: string;     // Service name (default: "app-${projectId}")
 }
 ```
 

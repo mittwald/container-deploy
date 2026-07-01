@@ -23,10 +23,11 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
                                     projectId: string,
                                     repositoryData: RepositoryData,
                                     timeout: Duration,
-                                    environment?: Record<string, string>) {
+                                    environment?: Record<string, string>,
+                                    serviceName?: string) {
 
     let existing: boolean = false;
-    const serviceName = `app-${projectId}`;
+    serviceName = serviceName || `app-${projectId}`;
     const servicesResp = await apiClient.container.listServices({
         projectId,
     });
