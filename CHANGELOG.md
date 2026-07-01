@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/mittwald/container-deploy/compare/v1.5.0...v1.6.0) (2026-07-01)
+
+
+### Features
+
+* **service:** make service name configurable ([#16](https://github.com/mittwald/container-deploy/issues/16)) ([b942226](https://github.com/mittwald/container-deploy/commit/b9422265f15cd59d5ef79625f00ce8d369ed7587))
+
 # [1.5.0](https://github.com/mittwald/container-deploy/compare/v1.4.0...v1.5.0) (2026-06-19)
 
 
