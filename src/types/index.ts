@@ -43,6 +43,11 @@ export type DeployOptions = {
     imageName?: string;
     /** Image tag to build and push (default: `latest`). */
     imageTag?: string;
+    /**
+     * Name of the service to deploy (default: `app-${projectId}`).
+     * Set this to run multiple parallel deployments in the same project.
+     */
+    serviceName?: string;
 };
 
 /**

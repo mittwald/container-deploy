@@ -102,6 +102,7 @@ describe("deployProject integration test", () => {
         imageName: "registry.test.project.space/app-image:latest",
       }),
       testTimeout,
+      undefined,
       undefined
     );
   });
@@ -165,7 +166,8 @@ describe("deployProject integration test", () => {
       testProjectId,
       expect.any(Object),
       options.waitTimeout,
-      customEnv
+      customEnv,
+      undefined
     );
   });
 
@@ -190,7 +192,31 @@ describe("deployProject integration test", () => {
       testProjectId,
       expect.any(Object),
       options.waitTimeout,
+      undefined,
       undefined
+    );
+  });
+
+  it("should pass a custom service name to deployService", async () => {
+    const testProjectId = "test-project-uuid";
+
+    const options: DeployOptions = {
+      projectId: testProjectId,
+      apiClient: {} as any,
+      waitTimeout: Duration.fromSeconds(30),
+      serviceName: "my-custom-service",
+    };
+
+    await deployProject(options);
+
+    const serviceModule = require("../src/entities/service");
+    expect(serviceModule.deployService).toHaveBeenCalledWith(
+      options.apiClient,
+      testProjectId,
+      expect.any(Object),
+      options.waitTimeout,
+      undefined,
+      "my-custom-service"
     );
   });
 });
