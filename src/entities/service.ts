@@ -115,6 +115,35 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
 }
 
 /**
+ * Extracts the named volumes referenced by a set of container volume mounts.
+ *
+ * Volume mounts follow the format `<volume>:<mountpoint>`. The `<volume>` part
+ * is a named volume when it is not a file path (i.e. it does not start with `/`
+ * or `.`). Named volumes have to be declared at the stack level so they are
+ * created and persisted across container recreations.
+ *
+ * @param volumes Volume mount specifications (`<volume>:<mountpoint>`)
+ * @returns A stack-level volume declaration map, or undefined if none are named
+ */
+function namedVolumeDeclarations(
+    volumes: string[] | undefined,
+): Record<string, Record<string, never>> | undefined {
+    if (!volumes || volumes.length === 0) {
+        return undefined;
+    }
+
+    const declarations: Record<string, Record<string, never>> = {};
+    for (const mount of volumes) {
+        const volume = mount.split(":")[0];
+        if (volume && !volume.startsWith("/") && !volume.startsWith(".")) {
+            declarations[volume] = {};
+        }
+    }
+
+    return Object.keys(declarations).length > 0 ? declarations : undefined;
+}
+
+/**
  * Generic service deployment function.
  * Deploys a service with given configuration to a project stack.
  * Returns the deployed service ID after it transitions to "running" state.
@@ -122,7 +151,7 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID (used as stack ID)
  * @param serviceName The name of the service to deploy
- * @param serviceConfig Service configuration (image, description, environment, ports)
+ * @param serviceConfig Service configuration (image, description, environment, ports, volumes)
  * @param timeout Maximum time to wait for the service to be running
  * @returns The ID of the deployed service
  */
@@ -135,11 +164,16 @@ export async function deployServiceAs(
         description: string;
         environment?: Record<string, string>;
         ports: string[];
+        volumes?: string[];
     },
     timeout: Duration,
 ): Promise<string> {
     const stackId = projectId;
     let deployedServiceId: string = "";
+
+    // Named volumes referenced by the service must be declared at the stack
+    // level so they are actually created and persisted.
+    const volumeDeclarations = namedVolumeDeclarations(serviceConfig.volumes);
 
     // Update stack with the new service
     const updateResp = await apiClient.container.updateStack({
@@ -148,6 +182,7 @@ export async function deployServiceAs(
             services: {
                 [serviceName]: serviceConfig,
             },
+            ...(volumeDeclarations ? { volumes: volumeDeclarations } : {}),
         },
     });
     assertStatus(updateResp, 200);
