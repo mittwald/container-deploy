@@ -15,6 +15,7 @@ import {
 
 import {
     DeployRes,
+    NamedVolumeMount,
     RepositoryData
 } from "../types/index.js";
 
@@ -113,17 +114,6 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
         serviceName,
     } as DeployRes;
 }
-
-/**
- * A named volume mounted into a container. Named volumes persist across
- * container recreations, unlike the container's own filesystem.
- */
-export type NamedVolumeMount = {
-    /** Name of the volume, unique within the stack. */
-    name: string;
-    /** Path inside the container the volume is mounted at. */
-    mountPath: string;
-};
 
 /**
  * Generic service deployment function.
