@@ -15,6 +15,7 @@ import {
 
 import {
     DeployRes,
+    NamedVolumeMount,
     RepositoryData
 } from "../types/index.js";
 
@@ -123,7 +124,7 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID (used as stack ID)
  * @param serviceName The name of the service to deploy
- * @param serviceConfig Service configuration (image, description, environment, ports)
+ * @param serviceConfig Service configuration (image, description, environment, ports, volumes)
  * @param timeout Maximum time to wait for the service to be running
  * @returns The ID of the deployed service
  */
@@ -136,19 +137,27 @@ export async function deployServiceAs(
         description: string;
         environment?: Record<string, string>;
         ports: string[];
+        volumes?: NamedVolumeMount[];
     },
     timeout: Duration,
 ): Promise<string> {
     const stackId = projectId;
     let deployedServiceId: string = "";
 
-    // Update stack with the new service
+    const { volumes = [], ...serviceRequest } = serviceConfig;
+
+    // Volumes go in two places: the mount specs on the service, and the stack
+    // level, which is what actually creates the volume.
     const updateResp = await apiClient.container.updateStack({
         stackId,
         data: {
             services: {
-                [serviceName]: serviceConfig,
+                [serviceName]: {
+                    ...serviceRequest,
+                    volumes: volumes.map(v => `${v.name}:${v.mountPath}`),
+                },
             },
+            volumes: Object.fromEntries(volumes.map(v => [v.name, {}])),
         },
     });
     assertStatus(updateResp, 200);

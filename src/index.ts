@@ -37,5 +37,6 @@ export type { DeployOptions, DeployResult } from "./types/index.js";
 export type {
   RepositoryData,
   RegistryData,
-  DeployRes
+  DeployRes,
+  NamedVolumeMount
 } from "./types/index.js";

@@ -19,6 +19,17 @@ export type DeployRes = {
     deployedServiceId: string;
 };
 
+/**
+ * A named volume mounted into a container. Named volumes persist across
+ * container recreations, unlike the container's own filesystem.
+ */
+export type NamedVolumeMount = {
+    /** Name of the volume, unique within the stack. */
+    name: string;
+    /** Path inside the container the volume is mounted at. */
+    mountPath: string;
+};
+
 export type RegistryData = {
     username: string;
     password: string;
