@@ -62,7 +62,7 @@ function makeApiClient(overrides: Record<string, jest.Mock> = {}) {
 }
 
 describe("deployServiceAs volume handling", () => {
-  it("passes volume mounts and declares named volumes at the stack level", async () => {
+  it("mounts named volumes on the service and declares them at the stack level", async () => {
     const { apiClient, updateStack, serviceId } = makeApiClient();
 
     const result = await deployServiceAs(
@@ -73,7 +73,9 @@ describe("deployServiceAs volume handling", () => {
         image: "mittwald/registry:3",
         description: "Project private registry",
         ports: ["5000:5000/tcp"],
-        volumes: ["project-registry-data:/var/lib/registry"],
+        volumes: [
+          { name: "project-registry-data", mountPath: "/var/lib/registry" },
+        ],
       },
       Duration.fromSeconds(30)
     );
@@ -81,37 +83,18 @@ describe("deployServiceAs volume handling", () => {
     expect(result).toBe(serviceId);
 
     const updateArg = updateStack.mock.calls[0][0];
-    // The mount spec is forwarded to the service config...
+    // The mount is rendered into the API's `<volume>:<mountpoint>` format...
     expect(updateArg.data.services["project-registry"].volumes).toEqual([
       "project-registry-data:/var/lib/registry",
     ]);
-    // ...and the named volume is declared at the stack level so it persists.
+    // ...and declared at the stack level, which is what actually creates it.
     expect(updateArg.data.volumes).toEqual({
       "project-registry-data": {},
     });
   });
 
-  it("does not declare stack volumes when no named volume is used", async () => {
-    const { apiClient, updateStack } = makeApiClient();
-
-    await deployServiceAs(
-      apiClient,
-      "project-1",
-      "app",
-      {
-        image: "nginx:alpine",
-        description: "app",
-        ports: ["80:80/tcp"],
-        // A bind mount against the project file system is not a named volume.
-        volumes: ["/html:/usr/share/nginx/html"],
-      },
-      Duration.fromSeconds(30)
-    );
-
-    const updateArg = updateStack.mock.calls[0][0];
-    expect(updateArg.data.volumes).toBeUndefined();
-  });
-
+  // An empty stack-level volume map would detach the stack's existing volumes,
+  // so the key has to be absent rather than empty.
   it("omits the volumes key entirely when the service has no volumes", async () => {
     const { apiClient, updateStack } = makeApiClient();
 

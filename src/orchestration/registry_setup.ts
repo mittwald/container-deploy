@@ -31,9 +31,9 @@ const MW_REGISTRY_PORT_PROTOCOL = "5000/tcp";
 // Persist pushed images by mounting a named volume at the registry's storage
 // directory. Without this, all images in the registry are lost whenever the
 // container is recreated. See: https://github.com/mittwald/container-deploy/issues/17
-const MW_REGISTRY_DATA_DIR = "/var/lib/registry";
-const MW_REGISTRY_VOLUME_NAME = "project-registry-data";
-const MW_REGISTRY_VOLUMES = [`${MW_REGISTRY_VOLUME_NAME}:${MW_REGISTRY_DATA_DIR}`];
+const MW_REGISTRY_VOLUMES = [
+    { name: "project-registry-data", mountPath: "/var/lib/registry" },
+];
 
 /**
  * Helper: Generate a unique username for registry credentials.

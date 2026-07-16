@@ -115,33 +115,15 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
 }
 
 /**
- * Extracts the named volumes referenced by a set of container volume mounts.
- *
- * Volume mounts follow the format `<volume>:<mountpoint>`. The `<volume>` part
- * is a named volume when it is not a file path (i.e. it does not start with `/`
- * or `.`). Named volumes have to be declared at the stack level so they are
- * created and persisted across container recreations.
- *
- * @param volumes Volume mount specifications (`<volume>:<mountpoint>`)
- * @returns A stack-level volume declaration map, or undefined if none are named
+ * A named volume mounted into a container. Named volumes persist across
+ * container recreations, unlike the container's own filesystem.
  */
-function namedVolumeDeclarations(
-    volumes: string[] | undefined,
-): Record<string, Record<string, never>> | undefined {
-    if (!volumes || volumes.length === 0) {
-        return undefined;
-    }
-
-    const declarations: Record<string, Record<string, never>> = {};
-    for (const mount of volumes) {
-        const volume = mount.split(":")[0];
-        if (volume && !volume.startsWith("/") && !volume.startsWith(".")) {
-            declarations[volume] = {};
-        }
-    }
-
-    return Object.keys(declarations).length > 0 ? declarations : undefined;
-}
+export type NamedVolumeMount = {
+    /** Name of the volume, unique within the stack. */
+    name: string;
+    /** Path inside the container the volume is mounted at. */
+    mountPath: string;
+};
 
 /**
  * Generic service deployment function.
@@ -164,26 +146,37 @@ export async function deployServiceAs(
         description: string;
         environment?: Record<string, string>;
         ports: string[];
-        volumes?: string[];
+        volumes?: NamedVolumeMount[];
     },
     timeout: Duration,
 ): Promise<string> {
     const stackId = projectId;
     let deployedServiceId: string = "";
 
-    // Named volumes referenced by the service must be declared at the stack
-    // level so they are actually created and persisted.
-    const volumeDeclarations = namedVolumeDeclarations(serviceConfig.volumes);
+    const { volumes, ...serviceRequest } = serviceConfig;
+
+    /*
+        Volumes are declared twice: once on the service as `<volume>:<mountpoint>`
+        mount specs, and once at the stack level, which is what actually creates
+        them. Both keys are omitted when the service has no volumes — an empty
+        stack-level map would detach any volumes the stack already has.
+    */
+    const stackData = volumes?.length
+        ? {
+            services: {
+                [serviceName]: {
+                    ...serviceRequest,
+                    volumes: volumes.map(v => `${v.name}:${v.mountPath}`),
+                },
+            },
+            volumes: Object.fromEntries(volumes.map(v => [v.name, {}])),
+        }
+        : { services: { [serviceName]: serviceRequest } };
 
     // Update stack with the new service
     const updateResp = await apiClient.container.updateStack({
         stackId,
-        data: {
-            services: {
-                [serviceName]: serviceConfig,
-            },
-            ...(volumeDeclarations ? { volumes: volumeDeclarations } : {}),
-        },
+        data: stackData,
     });
     assertStatus(updateResp, 200);
 
