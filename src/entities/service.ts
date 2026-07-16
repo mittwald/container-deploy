@@ -154,31 +154,19 @@ export async function deployServiceAs(
     let deployedServiceId: string = "";
 
     const { volumes = [], ...serviceRequest } = serviceConfig;
-    const hasVolumes = volumes.length > 0;
 
-    /*
-        Volumes go in two places: the mount specs on the service, and the stack
-        level, which is what actually creates the volume.
-
-        updateStack PATCHes, so omitting a key leaves it as it is. A service
-        without volumes omits `volumes` rather than sending an empty array,
-        which would replace (and so unmount) the volumes of a service that
-        already has some.
-    */
+    // Volumes go in two places: the mount specs on the service, and the stack
+    // level, which is what actually creates the volume.
     const updateResp = await apiClient.container.updateStack({
         stackId,
         data: {
             services: {
                 [serviceName]: {
                     ...serviceRequest,
-                    ...(hasVolumes && {
-                        volumes: volumes.map(v => `${v.name}:${v.mountPath}`),
-                    }),
+                    volumes: volumes.map(v => `${v.name}:${v.mountPath}`),
                 },
             },
-            ...(hasVolumes && {
-                volumes: Object.fromEntries(volumes.map(v => [v.name, {}])),
-            }),
+            volumes: Object.fromEntries(volumes.map(v => [v.name, {}])),
         },
     });
     assertStatus(updateResp, 200);

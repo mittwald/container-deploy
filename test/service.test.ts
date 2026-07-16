@@ -93,9 +93,7 @@ describe("deployServiceAs volume handling", () => {
     });
   });
 
-  // updateStack PATCHes: an empty `volumes` array would replace, and so unmount,
-  // the volumes of a service that already has some. The key has to be absent.
-  it("omits the volumes key entirely when the service has no volumes", async () => {
+  it("sends empty volumes when the service has none", async () => {
     const { apiClient, updateStack } = makeApiClient();
 
     await deployServiceAs(
@@ -111,6 +109,7 @@ describe("deployServiceAs volume handling", () => {
     );
 
     const updateArg = updateStack.mock.calls[0][0];
-    expect("volumes" in updateArg.data).toBe(false);
+    expect(updateArg.data.services["app"].volumes).toEqual([]);
+    expect(updateArg.data.volumes).toEqual({});
   });
 });
