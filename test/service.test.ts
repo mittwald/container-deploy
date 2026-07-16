@@ -93,8 +93,8 @@ describe("deployServiceAs volume handling", () => {
     });
   });
 
-  // An empty stack-level volume map would detach the stack's existing volumes,
-  // so the key has to be absent rather than empty.
+  // updateStack PATCHes: an empty `volumes` array would replace, and so unmount,
+  // the volumes of a service that already has some. The key has to be absent.
   it("omits the volumes key entirely when the service has no volumes", async () => {
     const { apiClient, updateStack } = makeApiClient();
 

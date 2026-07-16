@@ -156,10 +156,13 @@ export async function deployServiceAs(
     const { volumes, ...serviceRequest } = serviceConfig;
 
     /*
-        Volumes are declared twice: once on the service as `<volume>:<mountpoint>`
-        mount specs, and once at the stack level, which is what actually creates
-        them. Both keys are omitted when the service has no volumes — an empty
-        stack-level map would detach any volumes the stack already has.
+        Volumes go in two places: the mount specs on the service, and the stack
+        level, which is what actually creates the volume.
+
+        updateStack PATCHes, so omitted keys are left as they are. A service
+        without volumes therefore omits its `volumes` rather than sending an
+        empty array, which would replace (and so unmount) the volumes of a
+        service that already has some.
     */
     const stackData = volumes?.length
         ? {
