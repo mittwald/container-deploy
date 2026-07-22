@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/mittwald/container-deploy/compare/v1.6.0...v1.6.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **registry:** mount a persistent volume for the project registry ([#18](https://github.com/mittwald/container-deploy/issues/18)) ([9753242](https://github.com/mittwald/container-deploy/commit/9753242f6e62798da9aacda0f6d853a6c2fb7234))
+
 # [1.6.0](https://github.com/mittwald/container-deploy/compare/v1.5.0...v1.6.0) (2026-07-01)
 
 
