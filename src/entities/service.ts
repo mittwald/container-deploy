@@ -25,7 +25,8 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
                                     repositoryData: RepositoryData,
                                     timeout: Duration,
                                     environment?: Record<string, string>,
-                                    serviceName?: string) {
+                                    serviceName?: string,
+                                    volumes?: Record<string, string>) {
 
     let existing: boolean = false;
     serviceName = serviceName || `app-${projectId}`;
@@ -45,6 +46,8 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
     const stackId = projectId;
     let deployedServiceId: string = "";
 
+    const volumeEntries = Object.entries(volumes ?? {});
+
     const serviceRequest = {
         image: repositoryData.imageName!,
         description: "Deployed application",
@@ -53,6 +56,7 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
             PORT: "80",  // XXX: nothing clever, just match fallback so target is correctly set in the ingress.
             ...environment,
         },
+        volumes: volumeEntries.map(([name, mountPath]) => `${name}:${mountPath}`),
     };
 
     const updateResp = await apiClient.container.updateStack({
@@ -60,7 +64,8 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
         data: {
             services: {
                 [serviceName]: serviceRequest
-            }
+            },
+            volumes: Object.fromEntries(volumeEntries.map(([name]) => [name, {}])),
         },
     });
     assertStatus(updateResp, 200);

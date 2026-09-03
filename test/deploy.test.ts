@@ -103,6 +103,7 @@ describe("deployProject integration test", () => {
       }),
       testTimeout,
       undefined,
+      undefined,
       undefined
     );
   });
@@ -167,6 +168,7 @@ describe("deployProject integration test", () => {
       expect.any(Object),
       options.waitTimeout,
       customEnv,
+      undefined,
       undefined
     );
   });
@@ -193,6 +195,7 @@ describe("deployProject integration test", () => {
       expect.any(Object),
       options.waitTimeout,
       undefined,
+      undefined,
       undefined
     );
   });
@@ -216,7 +219,36 @@ describe("deployProject integration test", () => {
       expect.any(Object),
       options.waitTimeout,
       undefined,
-      "my-custom-service"
+      "my-custom-service",
+      undefined
+    );
+  });
+
+  it("should pass volumes to deployService", async () => {
+    const testProjectId = "test-project-uuid";
+    const customVolumes = {
+      "app-data": "/var/lib/app/data",
+      "app-config": "/etc/app/config",
+    };
+
+    const options: DeployOptions = {
+      projectId: testProjectId,
+      apiClient: {} as any,
+      waitTimeout: Duration.fromSeconds(30),
+      volumes: customVolumes,
+    };
+
+    await deployProject(options);
+
+    const serviceModule = require("../src/entities/service");
+    expect(serviceModule.deployService).toHaveBeenCalledWith(
+      options.apiClient,
+      testProjectId,
+      expect.any(Object),
+      options.waitTimeout,
+      undefined,
+      undefined,
+      customVolumes
     );
   });
 });
