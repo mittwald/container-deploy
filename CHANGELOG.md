@@ -1,3 +1,10 @@
+## [1.6.2](https://github.com/mittwald/container-deploy/compare/v1.6.1...v1.6.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* **registry:** provide volume name as part of volume definition ([#20](https://github.com/mittwald/container-deploy/issues/20)) ([1122165](https://github.com/mittwald/container-deploy/commit/1122165533d6a52d2a2a233328151cdd8f09e75c))
+
 ## [1.6.1](https://github.com/mittwald/container-deploy/compare/v1.6.0...v1.6.1) (2026-07-22)
 
 
