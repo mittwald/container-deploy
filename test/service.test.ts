@@ -89,7 +89,7 @@ describe("deployServiceAs volume handling", () => {
     ]);
     // ...and declared at the stack level, which is what actually creates it.
     expect(updateArg.data.volumes).toEqual({
-      "project-registry-data": {},
+      "project-registry-data": { name: "project-registry-data" },
     });
   });
 

@@ -157,7 +157,7 @@ export async function deployServiceAs(
                     volumes: volumes.map(v => `${v.name}:${v.mountPath}`),
                 },
             },
-            volumes: Object.fromEntries(volumes.map(v => [v.name, {}])),
+            volumes: Object.fromEntries(volumes.map(v => [v.name, {name: v.name}])),
         },
     });
     assertStatus(updateResp, 200);
