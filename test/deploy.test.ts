@@ -35,7 +35,6 @@ jest.mock("../src/entities/repository", () => ({
     ports: ["80:80/tcp"],
     dockerfilePath: "/tmp/test-repo/Dockerfile",
     dockerfileContent: "FROM nginx:alpine",
-    dockerfileCreated: false,
     railpackPlanPath: null,
   })),
 }));
