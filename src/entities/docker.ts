@@ -379,7 +379,7 @@ export async function localBuildWithRailpack(
  * Entry point for building Docker images. Checks if `railpackPlanPath` is
  * available and decides which build method to use:
  * - If `railpackPlanPath` exists: uses Buildx with Railpack.
- * - Otherwise: falls back to a standard Docker build.
+ * - Otherwise: uses the repository Dockerfile with a standard Docker build.
  */
 export async function buildDockerImage(
     registryData: RegistryData,
