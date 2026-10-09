@@ -59,6 +59,12 @@ export type DeployOptions = {
      * Set this to run multiple parallel deployments in the same project.
      */
     serviceName?: string;
+    /**
+     * Named volumes to mount into the deployed container, keyed by volume
+     * name with the container path as value, e.g.
+     * `{ "app-data": "/var/lib/app/data" }`.
+     */
+    volumes?: Record<string, string>;
 };
 
 /**

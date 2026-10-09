@@ -43,6 +43,7 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
     opts.waitTimeout,
     opts.environment,
     opts.serviceName,
+    opts.volumes,
   );
 
   return { deployedServiceId: deployRes.deployedServiceId, serviceName: deployRes.serviceName };

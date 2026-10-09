@@ -14,7 +14,7 @@ jest.mock(
   { virtual: true }
 );
 
-import { deployServiceAs } from "../src/entities/service";
+import { deployService, deployServiceAs } from "../src/entities/service";
 import { Duration } from "../src/utils/helpers";
 
 // The @mittwald/api-client's assertStatus is a no-op for our mocked responses
@@ -110,6 +110,62 @@ describe("deployServiceAs volume handling", () => {
 
     const updateArg = updateStack.mock.calls[0][0];
     expect(updateArg.data.services["app"].volumes).toEqual([]);
+    expect(updateArg.data.volumes).toEqual({});
+  });
+});
+
+describe("deployService volume handling", () => {
+  it("mounts named volumes on the service and declares them at the stack level", async () => {
+    const { apiClient, updateStack, serviceId } = makeApiClient();
+
+    const result = await deployService(
+      apiClient,
+      "project-1",
+      {
+        buildContext: "/tmp/test-repo",
+        ports: ["80:80/tcp"],
+        imageName: "registry.test.project.space/app-image:latest",
+      },
+      Duration.fromSeconds(30),
+      undefined,
+      undefined,
+      {
+        "app-data": "/var/lib/app/data",
+        "app-config": "/etc/app/config",
+      }
+    );
+
+    expect(result.deployedServiceId).toBe(serviceId);
+
+    const updateArg = updateStack.mock.calls[0][0];
+    // The mounts are rendered into the API's `<volume>:<mountpoint>` format...
+    expect(updateArg.data.services["app-project-1"].volumes).toEqual([
+      "app-data:/var/lib/app/data",
+      "app-config:/etc/app/config",
+    ]);
+    // ...and declared at the stack level, which is what actually creates them.
+    expect(updateArg.data.volumes).toEqual({
+      "app-data": {},
+      "app-config": {},
+    });
+  });
+
+  it("sends empty volumes when the deployment has none", async () => {
+    const { apiClient, updateStack } = makeApiClient();
+
+    await deployService(
+      apiClient,
+      "project-1",
+      {
+        buildContext: "/tmp/test-repo",
+        ports: ["80:80/tcp"],
+        imageName: "registry.test.project.space/app-image:latest",
+      },
+      Duration.fromSeconds(30)
+    );
+
+    const updateArg = updateStack.mock.calls[0][0];
+    expect(updateArg.data.services["app-project-1"].volumes).toEqual([]);
     expect(updateArg.data.volumes).toEqual({});
   });
 });
