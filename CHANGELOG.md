@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/mittwald/container-deploy/compare/v1.6.2...v1.7.0) (2026-10-09)
+
+
+### Features
+
+* **service:** support mounted volumes in deploy options ([#19](https://github.com/mittwald/container-deploy/issues/19)) ([9c4c0bf](https://github.com/mittwald/container-deploy/commit/9c4c0bf2afade9024c8ea02d040f8ce910b7a086))
+
 ## [1.6.2](https://github.com/mittwald/container-deploy/compare/v1.6.1...v1.6.2) (2026-09-04)
 
 
