@@ -48,6 +48,8 @@ export type DeployResult = {
 export type DeployOptions = {
     apiClient: MittwaldAPIV2Client;
     projectId: string;
+    /** ID of the existing stack to deploy application and registry services to. */
+    stackId: string;
     waitTimeout: Duration;
     environment?: Record<string, string>;
     /** Image name to build and push (default: `app-image`). */
