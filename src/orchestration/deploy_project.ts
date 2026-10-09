@@ -25,6 +25,7 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
   const registryData = await setupProjectRegistry(
     opts.apiClient,
     opts.projectId,
+    opts.stackId,
     projectShortId,
     opts.waitTimeout,
   );
@@ -39,6 +40,7 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
   const deployRes = await deployService(
     opts.apiClient,
     opts.projectId,
+    opts.stackId,
     repositoryData,
     opts.waitTimeout,
     opts.environment,

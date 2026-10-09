@@ -14,7 +14,7 @@ jest.mock(
   { virtual: true }
 );
 
-import { deployServiceAs } from "../src/entities/service";
+import { deployService, deployServiceAs } from "../src/entities/service";
 import { Duration } from "../src/utils/helpers";
 
 // The @mittwald/api-client's assertStatus is a no-op for our mocked responses
@@ -45,16 +45,20 @@ function makeApiClient(overrides: Record<string, jest.Mock> = {}) {
   }));
 
   const recreateService = jest.fn(async () => ({ status: 204 }));
+  const getStack = jest.fn(async () => ({ status: 200, data: { services: [] } }));
 
   return {
     serviceId,
     updateStack,
     listServices,
+    recreateService,
+    getStack,
     apiClient: {
       container: {
         updateStack,
         listServices,
         recreateService,
+        getStack,
         ...overrides,
       },
     } as any,
@@ -68,6 +72,7 @@ describe("deployServiceAs volume handling", () => {
     const result = await deployServiceAs(
       apiClient,
       "project-1",
+      "stack-1",
       "project-registry",
       {
         image: "mittwald/registry:3",
@@ -83,6 +88,7 @@ describe("deployServiceAs volume handling", () => {
     expect(result).toBe(serviceId);
 
     const updateArg = updateStack.mock.calls[0][0];
+    expect(updateArg.stackId).toBe("stack-1");
     // The mount is rendered into the API's `<volume>:<mountpoint>` format...
     expect(updateArg.data.services["project-registry"].volumes).toEqual([
       "project-registry-data:/var/lib/registry",
@@ -99,6 +105,7 @@ describe("deployServiceAs volume handling", () => {
     await deployServiceAs(
       apiClient,
       "project-1",
+      "stack-1",
       "app",
       {
         image: "nginx:alpine",
@@ -111,5 +118,88 @@ describe("deployServiceAs volume handling", () => {
     const updateArg = updateStack.mock.calls[0][0];
     expect(updateArg.data.services["app"].volumes).toEqual([]);
     expect(updateArg.data.volumes).toEqual({});
+  });
+});
+
+describe.each(["standard", "named"])("%s service stack targeting", deployment => {
+  const deploy = (apiClient: any) => deployment === "standard"
+    ? deployService(
+        apiClient,
+        "project-1",
+        "stack-1",
+        { buildContext: ".", imageName: "nginx:alpine", ports: ["80:80/tcp"] },
+        Duration.fromSeconds(1),
+        undefined,
+        "app",
+      )
+    : deployServiceAs(
+        apiClient,
+        "project-1",
+        "stack-1",
+        "app",
+        { image: "nginx:alpine", description: "app", ports: ["80:80/tcp"] },
+        Duration.fromSeconds(1),
+      );
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("updates and polls the selected service despite duplicate names in other stacks", async () => {
+    const listServices = jest.fn(async () => ({
+      status: 200,
+      data: [
+        { id: "other-service", serviceName: "app", status: "stopped" },
+        { id: "svc-123", serviceName: "app", status: "running" },
+      ],
+    }));
+    const { apiClient, updateStack, getStack, recreateService } = makeApiClient({ listServices });
+
+    const result = await deploy(apiClient);
+
+    expect(deployment === "standard" ? (result as any).deployedServiceId : result).toBe("svc-123");
+    expect(updateStack).toHaveBeenCalledWith(expect.objectContaining({ stackId: "stack-1" }));
+    expect(listServices).toHaveBeenCalledWith({ projectId: "project-1" });
+    expect(recreateService).not.toHaveBeenCalled();
+    if (deployment === "standard") {
+      expect(getStack).toHaveBeenCalledWith({ stackId: "stack-1" });
+    }
+  });
+
+  it("recreates only the service in the selected stack", async () => {
+    const getStack = jest.fn(async () => ({
+      status: 200,
+      data: { services: [{ id: "svc-123", serviceName: "app" }] },
+    }));
+    const listServices = jest.fn()
+      .mockResolvedValueOnce({
+        status: 200,
+        data: [
+          { id: "other-service", serviceName: "app", status: "running" },
+          { id: "svc-123", serviceName: "app", status: deployment === "standard" ? "running" : "stopped" },
+        ],
+      })
+      .mockResolvedValue({ status: 200, data: [{ id: "svc-123", serviceName: "app", status: "running" }] });
+    const { apiClient, recreateService } = makeApiClient({ getStack, listServices });
+
+    await deploy(apiClient);
+
+    expect(recreateService).toHaveBeenCalledWith({ stackId: "stack-1", serviceId: "svc-123" });
+  });
+
+  it("does not treat a running same-named service in another stack as ready", async () => {
+    jest.useFakeTimers();
+    const listServices = jest.fn(async () => ({
+      status: 200,
+      data: [
+        { id: "other-service", serviceName: "app", status: "running" },
+        { id: "svc-123", serviceName: "app", status: "stopped" },
+      ],
+    }));
+    const { apiClient } = makeApiClient({ listServices });
+
+    const assertion = expect(deploy(apiClient)).rejects.toThrow("expected condition was not reached");
+    await jest.advanceTimersByTimeAsync(1000);
+    await assertion;
   });
 });
