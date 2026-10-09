@@ -53,6 +53,7 @@ function generateUsername(): string {
  *
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID where the registry should be created
+ * @param stackId The ID of the existing stack hosting the registry service
  * @param projectShortId The short ID of the project (for domain subdomain)
  * @param timeout Maximum time to wait for service/domain availability
  * @returns Registry information including credentials and service ID
@@ -60,6 +61,7 @@ function generateUsername(): string {
 export async function setupProjectRegistry(
     apiClient: MittwaldAPIV2Client,
     projectId: string,
+    stackId: string,
     projectShortId: string,
     timeout: Duration,
 ): Promise<RegistryData> {
@@ -79,6 +81,7 @@ export async function setupProjectRegistry(
         const registryServiceId = await deployServiceAs(
             apiClient,
             projectId,
+            stackId,
             MW_REGISTRY_SERVICE_NAME,
             {
                 image: MW_REGISTRY_IMAGE,
@@ -139,6 +142,7 @@ export async function setupProjectRegistry(
         registryInfo = await checkProjectRegistry(
             apiClient,
             projectId,
+            stackId,
             registry,
         );
         registryInfo.created = false;

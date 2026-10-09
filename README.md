@@ -78,14 +78,14 @@ Pure API wrappers with no orchestration logic. Each handles a single domain:
 - **Key Functions**:
   - `getProjectRegistry()` – Fetch existing registry for a project
   - `createRegistry()` – Create new registry service  
-  - `checkProjectRegistry()` – Verify registry exists
+  - `checkProjectRegistry(apiClient, projectId, stackId, registry)` – Read and verify registry credentials from the selected stack
 - **Used By**: `registry_setup.ts`, direct consumers for registry-only operations
 
 #### `entities/service.ts` – Service Deployment API
 - **Responsibility**: Service creation and deployment via Mittwald API
 - **Key Functions**:
   - `deployService()` – Deploy a standard service (returns full DeployRes)
-  - `deployServiceAs(apiClient, projectId, serviceName, serviceConfig, timeout)` – Deploy any named service with custom config (returns service ID string)
+  - `deployServiceAs(apiClient, projectId, stackId, serviceName, serviceConfig, timeout)` – Deploy any named service with custom config (returns service ID string)
 - **Used By**: `registry_setup.ts` for registry service, `deploy_project.ts` for application service
 - **Example**: Registry setup uses `deployServiceAs()` to create the container registry service
 
@@ -138,6 +138,26 @@ Multi-step workflows that compose entities to achieve higher-level goals:
 
 ## Quick Start
 
+### Stack Selection And Migration
+
+A project no longer has an implicit default stack. Create or select an existing
+stack belonging to the project and pass its ID explicitly. The library does not
+create a stack or infer its ID from `projectId`.
+
+This is a breaking API change:
+
+- `deployProject()` requires `stackId` in its options.
+- `deployService(apiClient, projectId, stackId, repositoryData, timeout, environment?, serviceName?)`
+- `deployServiceAs(apiClient, projectId, stackId, serviceName, serviceConfig, timeout)`
+- `setupProjectRegistry(apiClient, projectId, stackId, projectShortId, timeout)`
+- `checkProjectRegistry(apiClient, projectId, stackId, registry)`
+
+Application and registry services use the selected stack. When reusing an existing
+project registry, its `project-registry` service must be in that stack. Registry
+records and domains remain project-scoped; their APIs still use `projectId`.
+Service readiness is checked by service ID, so a same-named service in another
+stack cannot satisfy the deployment's readiness check.
+
 ### High-Level: Complete Deployment
 
 ```typescript
@@ -147,6 +167,7 @@ import { deployProject, Duration } from 'container-deploy';
 const result = await deployProject({
   apiClient: myApiClient,
   projectId: 'your-project-id',
+  stackId: 'your-stack-id',
   waitTimeout: Duration.fromSeconds(600),
 });
 
@@ -163,7 +184,9 @@ import { buildDockerImage, localDockerPush } from 'container-deploy';
 const registry = await setupProjectRegistry(
   apiClient,
   projectId,
-  Duration.fromMinutes(5)
+  stackId,
+  projectShortId,
+  Duration.fromSeconds(300)
 );
 
 // Then handle build/push with your own logic
@@ -175,17 +198,21 @@ await localDockerPush(imageName, registry.host, registry.username, registry.pass
 
 ```typescript
 import {
+  getProjectRegistry,
   checkProjectRegistry,
   createRegistry,
+  deployServiceAs,
   createDomain,
   waitForDomainReachable,
 } from 'container-deploy';
 
 // Check existing registry
-const existing = await checkProjectRegistry(apiClient, projectId);
-if (!existing) {
+const existing = await getProjectRegistry(apiClient, projectId);
+if (existing) {
+  const registryData = await checkProjectRegistry(apiClient, projectId, stackId, existing);
+} else {
   // Create registry service
-  const serviceId = await deployServiceAs(apiClient, projectId, 'registry', {...});
+  const serviceId = await deployServiceAs(apiClient, projectId, stackId, 'project-registry', {...}, timeout);
   
   // Expose via domain
   const domain = await createDomain(apiClient, serviceId, {...});
@@ -204,6 +231,7 @@ Complete deployment pipeline: registry setup → Docker build → push → servi
 **Parameters:**
 - `apiClient` – Mittwald API v2 client instance
 - `projectId` – UUID of target project
+- `stackId` – ID of an existing stack belonging to the project (required)
 - `waitTimeout` – Maximum time to wait for operations
 - `imageName` _(optional)_ – Name of the built image (default: `app-image`)
 - `imageTag` _(optional)_ – Tag of the built image (default: `latest`)
@@ -217,13 +245,15 @@ Complete deployment pipeline: registry setup → Docker build → push → servi
 }
 ```
 
-#### `setupProjectRegistry(apiClient, projectId, timeout): Promise<RegistryData>`
+#### `setupProjectRegistry(apiClient, projectId, stackId, projectShortId, timeout): Promise<RegistryData>`
 
 Set up complete registry infrastructure (service + domain + registration).
 
 **Parameters:**
 - `apiClient` – Mittwald API v2 client instance
 - `projectId` – UUID of target project  
+- `stackId` – ID of the existing stack hosting the registry service (required)
+- `projectShortId` – Short project ID used for the registry hostname
 - `timeout` – Maximum time to wait for registry readiness
 
 **Returns:**
@@ -386,6 +416,7 @@ export interface RegistryData {
 export interface DeployOptions {
   apiClient: MittwaldAPIV2Client;
   projectId: string;
+  stackId: string;
   waitTimeout: Duration;
   environment?: Record<string, string>;
   imageName?: string;  // Image name (default: "app-image")
@@ -416,10 +447,11 @@ import { deployServiceAs } from '../entities/service';
 export async function setupRegistryAndService(
   apiClient: MittwaldAPIV2Client,
   projectId: string,
+  stackId: string,
   timeout: Duration
 ): Promise<{ registry: RegistryData; serviceId: string }> {
   const registry = await createRegistry(apiClient, projectId);
-  const serviceId = await deployServiceAs(apiClient, projectId, 'app', {...});
+  const serviceId = await deployServiceAs(apiClient, projectId, stackId, 'app', {...}, timeout);
   return { registry, serviceId };
 }
 ```
@@ -532,6 +564,7 @@ For this to work, the dist folder must be committed after building. When release
 {
   apiClient: any;           // Mittwald API client
   projectId: string;        // Project UUID
+  stackId: string;          // Existing stack ID, distinct from the project ID
   waitTimeout: Duration;    // Deployment timeout
   environment?: Record<string, string>;  // Build/runtime environment
   imageName?: string;       // Image name (default: "app-image")

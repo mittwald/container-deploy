@@ -23,7 +23,7 @@ export {
   checkProjectRegistry 
 } from "./entities/registry.js";
 export { checkRepository } from "./entities/repository.js";
-export { deployService } from "./entities/service.js";
+export { deployService, deployServiceAs } from "./entities/service.js";
 export { getProjectShortIdFromUuid } from "./entities/project.js";
 export { 
   createDomain,

@@ -86,12 +86,14 @@ export async function createRegistry(
  *
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID
+ * @param stackId The ID of the stack hosting the registry service
  * @param registry The registry object to check
  * @returns RegistryData with credentials and configuration
  */
 export async function checkProjectRegistry(
     apiClient: MittwaldAPIV2Client,
     projectId: string,
+    stackId: string,
     registry: Registry,
 ): Promise<RegistryData> {
     /*
@@ -102,12 +104,12 @@ export async function checkProjectRegistry(
     const MW_REGISTRY_SERVICE_NAME = "project-registry";
     const MW_REGISTRY_PORT_PROTOCOL = "5000/tcp";
 
-    const servicesResp = await apiClient.container.listServices({
-        projectId,
+    const stackResp = await apiClient.container.getStack({
+        stackId,
     });
-    assertStatus(servicesResp, 200);
+    assertStatus(stackResp, 200);
 
-    const registryService = servicesResp.data.find(
+    const registryService = stackResp.data.services?.find(
         svc => svc.serviceName === MW_REGISTRY_SERVICE_NAME
     );
 
@@ -121,7 +123,7 @@ export async function checkProjectRegistry(
 
     const serviceDetailsResp = await apiClient.container.getService({
         serviceId: registryServiceId,
-        stackId: projectId,
+        stackId,
     });
     assertStatus(serviceDetailsResp, 200);
 
