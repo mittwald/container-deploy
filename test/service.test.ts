@@ -128,6 +128,7 @@ describe("deployService volume handling", () => {
     const result = await deployService(
       apiClient,
       "project-1",
+      "stack-1",
       {
         buildContext: "/tmp/test-repo",
         ports: ["80:80/tcp"],
@@ -163,6 +164,7 @@ describe("deployService volume handling", () => {
     await deployService(
       apiClient,
       "project-1",
+      "stack-1",
       {
         buildContext: "/tmp/test-repo",
         ports: ["80:80/tcp"],

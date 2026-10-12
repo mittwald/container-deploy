@@ -244,6 +244,7 @@ describe("deployProject integration test", () => {
 
     const options: DeployOptions = {
       projectId: testProjectId,
+      stackId: "test-stack-uuid",
       apiClient: {} as any,
       waitTimeout: Duration.fromSeconds(30),
       volumes: customVolumes,
@@ -255,6 +256,7 @@ describe("deployProject integration test", () => {
     expect(serviceModule.deployService).toHaveBeenCalledWith(
       options.apiClient,
       testProjectId,
+      options.stackId,
       expect.any(Object),
       options.waitTimeout,
       undefined,
