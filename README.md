@@ -84,7 +84,7 @@ Pure API wrappers with no orchestration logic. Each handles a single domain:
 #### `entities/service.ts` – Service Deployment API
 - **Responsibility**: Service creation and deployment via Mittwald API
 - **Key Functions**:
-  - `deployService()` – Deploy a standard service (returns full DeployRes)
+  - `deployService(apiClient, projectId, stackId, repositoryData, timeout, environment?, serviceName?, volumes?)` – Deploy a standard service (returns full DeployRes)
   - `deployServiceAs(apiClient, projectId, stackId, serviceName, serviceConfig, timeout)` – Deploy any named service with custom config (returns service ID string)
 - **Used By**: `registry_setup.ts` for registry service, `deploy_project.ts` for application service
 - **Example**: Registry setup uses `deployServiceAs()` to create the container registry service
@@ -147,7 +147,7 @@ create a stack or infer its ID from `projectId`.
 This is a breaking API change:
 
 - `deployProject()` requires `stackId` in its options.
-- `deployService(apiClient, projectId, stackId, repositoryData, timeout, environment?, serviceName?)`
+- `deployService(apiClient, projectId, stackId, repositoryData, timeout, environment?, serviceName?, volumes?)`
 - `deployServiceAs(apiClient, projectId, stackId, serviceName, serviceConfig, timeout)`
 - `setupProjectRegistry(apiClient, projectId, stackId, projectShortId, timeout)`
 - `checkProjectRegistry(apiClient, projectId, stackId, registry)`
