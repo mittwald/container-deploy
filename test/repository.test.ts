@@ -1,8 +1,16 @@
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
+import { execSync } from "child_process";
 
 import { checkRepository } from "../src/entities/repository";
+import { pathExists } from "../src/utils/helpers";
+
+jest.mock("child_process", () => ({
+  execSync: jest.fn(),
+}));
+
+const execSyncMock = execSync as jest.MockedFunction<typeof execSync>;
 
 describe("checkRepository", () => {
   const initialCwd = process.cwd();
@@ -11,6 +19,7 @@ describe("checkRepository", () => {
   beforeEach(async () => {
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), "container-deploy-repo-test-"));
     process.chdir(testDir);
+    jest.clearAllMocks();
   });
 
   afterEach(async () => {
@@ -54,5 +63,31 @@ describe("checkRepository", () => {
     const repositoryData = await checkRepository({ PORT: "invalid" });
 
     expect(repositoryData.ports[0]).toBe("80:80/tcp");
+  });
+
+  it("should throw railpack output when railpack plan generation fails", async () => {
+    const railpackError = new Error("Command failed: railpack prepare .") as Error & {
+      stdout: string;
+      stderr: string;
+    };
+    railpackError.stdout = "detected project files";
+    railpackError.stderr = "unsupported project layout";
+    execSyncMock.mockImplementationOnce(() => {
+      throw railpackError;
+    });
+
+    await expect(checkRepository()).rejects.toThrow(
+      /Railpack failed to prepare a build plan[\s\S]*detected project files[\s\S]*unsupported project layout/,
+    );
+    await expect(pathExists(path.join(testDir, "Dockerfile"))).resolves.toBe(false);
+  });
+
+  it("should throw when railpack succeeds without writing a plan", async () => {
+    execSyncMock.mockReturnValueOnce("");
+
+    await expect(checkRepository()).rejects.toThrow(
+      "Railpack finished successfully but did not create railpack-plan.json",
+    );
+    await expect(pathExists(path.join(testDir, "Dockerfile"))).resolves.toBe(false);
   });
 });

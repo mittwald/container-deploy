@@ -40,3 +40,4 @@ export type {
   DeployRes,
   NamedVolumeMount
 } from "./types/index.js";
+export { Duration } from "./utils/helpers.js";
