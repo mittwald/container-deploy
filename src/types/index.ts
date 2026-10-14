@@ -45,11 +45,26 @@ export type DeployResult = {
     serviceName: string;
 };
 
+type DeployStackOptions =
+    | {
+        /** Shared stack ID used for both registry and application services. */
+        stackId: string;
+        /** Optional stack override for the registry service. */
+        registryStackId?: string;
+        /** Optional stack override for the application service. */
+        applicationStackId?: string;
+    }
+    | {
+        stackId?: never;
+        /** Stack ID hosting the registry service. */
+        registryStackId: string;
+        /** Stack ID hosting the application service. */
+        applicationStackId: string;
+    };
+
 export type DeployOptions = {
     apiClient: MittwaldAPIV2Client;
     projectId: string;
-    /** ID of the existing stack to deploy application and registry services to. */
-    stackId: string;
     waitTimeout: Duration;
     environment?: Record<string, string>;
     /** Image name to build and push (default: `app-image`). */
@@ -67,7 +82,7 @@ export type DeployOptions = {
      * `{ "app-data": "/var/lib/app/data" }`.
      */
     volumes?: Record<string, string>;
-};
+} & DeployStackOptions;
 
 /**
  * Ingress (domain) data from Mittwald API.

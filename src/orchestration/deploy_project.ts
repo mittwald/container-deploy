@@ -18,6 +18,12 @@ import type {
 
 export async function deployProject(opts: DeployOptions): Promise<DeployResult> {
 
+  const registryStackId = opts.registryStackId ?? opts.stackId;
+  const applicationStackId = opts.applicationStackId ?? opts.stackId;
+  if (!registryStackId || !applicationStackId) {
+    throw new Error("Provide stackId or both registryStackId and applicationStackId.");
+  }
+
   const projectShortId = await getProjectShortIdFromUuid(opts.apiClient, opts.projectId);
 
   checkRequiredTools();
@@ -25,7 +31,7 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
   const registryData = await setupProjectRegistry(
     opts.apiClient,
     opts.projectId,
-    opts.stackId,
+    registryStackId,
     projectShortId,
     opts.waitTimeout,
   );
@@ -40,7 +46,7 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
   const deployRes = await deployService(
     opts.apiClient,
     opts.projectId,
-    opts.stackId,
+    applicationStackId,
     repositoryData,
     opts.waitTimeout,
     opts.environment,

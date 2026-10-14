@@ -111,6 +111,39 @@ describe("deployProject integration test", () => {
     );
   });
 
+  it("should deploy registry and application to separate stacks", async () => {
+    const options: DeployOptions = {
+      projectId: "test-project-uuid",
+      registryStackId: "registry-stack-uuid",
+      applicationStackId: "application-stack-uuid",
+      apiClient: {} as any,
+      waitTimeout: Duration.fromSeconds(30),
+    };
+
+    await deployProject(options);
+
+    const registrySetupModule = require("../src/orchestration/registry_setup");
+    expect(registrySetupModule.setupProjectRegistry).toHaveBeenCalledWith(
+      options.apiClient,
+      options.projectId,
+      options.registryStackId,
+      "test-short-id",
+      options.waitTimeout
+    );
+
+    const serviceModule = require("../src/entities/service");
+    expect(serviceModule.deployService).toHaveBeenCalledWith(
+      options.apiClient,
+      options.projectId,
+      options.applicationStackId,
+      expect.any(Object),
+      options.waitTimeout,
+      undefined,
+      undefined,
+      undefined
+    );
+  });
+
   it("should handle errors from tool checks", async () => {
     const dockerModule = require("../src/entities/docker");
     dockerModule.checkRequiredTools.mockImplementationOnce(() => {
