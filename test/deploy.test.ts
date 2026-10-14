@@ -59,6 +59,7 @@ describe("deployProject integration test", () => {
 
     const options: DeployOptions = {
       projectId: testProjectId,
+      stackId: "test-stack-uuid",
       apiClient: {} as any, // Mock API client - actual methods are mocked
       waitTimeout: testTimeout,
     };
@@ -87,6 +88,7 @@ describe("deployProject integration test", () => {
     expect(registrySetupModule.setupProjectRegistry).toHaveBeenCalledWith(
       options.apiClient,
       testProjectId,
+      options.stackId,
       "test-short-id",
       testTimeout
     );
@@ -98,10 +100,44 @@ describe("deployProject integration test", () => {
     expect(serviceModule.deployService).toHaveBeenCalledWith(
       options.apiClient,
       testProjectId,
+      options.stackId,
       expect.objectContaining({
         imageName: "registry.test.project.space/app-image:latest",
       }),
       testTimeout,
+      undefined,
+      undefined,
+      undefined
+    );
+  });
+
+  it("should deploy registry and application to separate stacks", async () => {
+    const options: DeployOptions = {
+      projectId: "test-project-uuid",
+      registryStackId: "registry-stack-uuid",
+      applicationStackId: "application-stack-uuid",
+      apiClient: {} as any,
+      waitTimeout: Duration.fromSeconds(30),
+    };
+
+    await deployProject(options);
+
+    const registrySetupModule = require("../src/orchestration/registry_setup");
+    expect(registrySetupModule.setupProjectRegistry).toHaveBeenCalledWith(
+      options.apiClient,
+      options.projectId,
+      options.registryStackId,
+      "test-short-id",
+      options.waitTimeout
+    );
+
+    const serviceModule = require("../src/entities/service");
+    expect(serviceModule.deployService).toHaveBeenCalledWith(
+      options.apiClient,
+      options.projectId,
+      options.applicationStackId,
+      expect.any(Object),
+      options.waitTimeout,
       undefined,
       undefined,
       undefined
@@ -117,6 +153,7 @@ describe("deployProject integration test", () => {
     const testProjectId = "test-project-uuid";
     const options: DeployOptions = {
       projectId: testProjectId,
+      stackId: "test-stack-uuid",
       apiClient: {} as any,
       waitTimeout: Duration.fromSeconds(30),
     };
@@ -133,6 +170,7 @@ describe("deployProject integration test", () => {
     const testProjectId = "test-project-uuid";
     const options: DeployOptions = {
       projectId: testProjectId,
+      stackId: "test-stack-uuid",
       apiClient: {} as any,
       waitTimeout: Duration.fromSeconds(30),
     };
@@ -151,6 +189,7 @@ describe("deployProject integration test", () => {
 
     const options: DeployOptions = {
       projectId: testProjectId,
+      stackId: "test-stack-uuid",
       apiClient: {} as any,
       waitTimeout: Duration.fromSeconds(30),
       environment: customEnv,
@@ -165,6 +204,7 @@ describe("deployProject integration test", () => {
     expect(serviceModule.deployService).toHaveBeenCalledWith(
       options.apiClient,
       testProjectId,
+      options.stackId,
       expect.any(Object),
       options.waitTimeout,
       customEnv,
@@ -178,6 +218,7 @@ describe("deployProject integration test", () => {
 
     const options: DeployOptions = {
       projectId: testProjectId,
+      stackId: "test-stack-uuid",
       apiClient: {} as any,
       waitTimeout: Duration.fromSeconds(30),
       // environment intentionally omitted
@@ -192,6 +233,7 @@ describe("deployProject integration test", () => {
     expect(serviceModule.deployService).toHaveBeenCalledWith(
       options.apiClient,
       testProjectId,
+      options.stackId,
       expect.any(Object),
       options.waitTimeout,
       undefined,
@@ -205,6 +247,7 @@ describe("deployProject integration test", () => {
 
     const options: DeployOptions = {
       projectId: testProjectId,
+      stackId: "test-stack-uuid",
       apiClient: {} as any,
       waitTimeout: Duration.fromSeconds(30),
       serviceName: "my-custom-service",
@@ -216,6 +259,7 @@ describe("deployProject integration test", () => {
     expect(serviceModule.deployService).toHaveBeenCalledWith(
       options.apiClient,
       testProjectId,
+      options.stackId,
       expect.any(Object),
       options.waitTimeout,
       undefined,
@@ -233,6 +277,7 @@ describe("deployProject integration test", () => {
 
     const options: DeployOptions = {
       projectId: testProjectId,
+      stackId: "test-stack-uuid",
       apiClient: {} as any,
       waitTimeout: Duration.fromSeconds(30),
       volumes: customVolumes,
@@ -244,6 +289,7 @@ describe("deployProject integration test", () => {
     expect(serviceModule.deployService).toHaveBeenCalledWith(
       options.apiClient,
       testProjectId,
+      options.stackId,
       expect.any(Object),
       options.waitTimeout,
       undefined,

@@ -78,14 +78,14 @@ Pure API wrappers with no orchestration logic. Each handles a single domain:
 - **Key Functions**:
   - `getProjectRegistry()` – Fetch existing registry for a project
   - `createRegistry()` – Create new registry service  
-  - `checkProjectRegistry()` – Verify registry exists
+  - `checkProjectRegistry(apiClient, projectId, stackId, registry)` – Read and verify registry credentials from the selected stack
 - **Used By**: `registry_setup.ts`, direct consumers for registry-only operations
 
 #### `entities/service.ts` – Service Deployment API
 - **Responsibility**: Service creation and deployment via Mittwald API
 - **Key Functions**:
-  - `deployService()` – Deploy a standard service (returns full DeployRes)
-  - `deployServiceAs(apiClient, projectId, serviceName, serviceConfig, timeout)` – Deploy any named service with custom config (returns service ID string)
+  - `deployService(apiClient, projectId, stackId, repositoryData, timeout, environment?, serviceName?, volumes?)` – Deploy a standard service (returns full DeployRes)
+  - `deployServiceAs(apiClient, projectId, stackId, serviceName, serviceConfig, timeout)` – Deploy any named service with custom config (returns service ID string)
 - **Used By**: `registry_setup.ts` for registry service, `deploy_project.ts` for application service
 - **Example**: Registry setup uses `deployServiceAs()` to create the container registry service
 
@@ -138,6 +138,30 @@ Multi-step workflows that compose entities to achieve higher-level goals:
 
 ## Quick Start
 
+### Stack Selection And Migration
+
+A project no longer has an implicit default stack. Create or select existing
+stacks belonging to the project and pass their IDs explicitly. The library does
+not create stacks or infer their IDs from `projectId`.
+
+This is a breaking API change:
+
+- `deployProject()` accepts `stackId` to use one stack for both the registry
+  and application, or `registryStackId` and `applicationStackId` to deploy them
+  into separate stacks. When `stackId` is supplied with either specific ID, the
+  specific ID overrides the shared stack for that part.
+- `deployService(apiClient, projectId, stackId, repositoryData, timeout, environment?, serviceName?, volumes?)`
+- `deployServiceAs(apiClient, projectId, stackId, serviceName, serviceConfig, timeout)`
+- `setupProjectRegistry(apiClient, projectId, stackId, projectShortId, timeout)`
+- `checkProjectRegistry(apiClient, projectId, stackId, registry)`
+
+The registry service uses the registry stack, while the application service uses
+the application stack. When reusing an existing project registry, its
+`project-registry` service must be in the selected registry stack. Registry
+records and domains remain project-scoped; their APIs still use `projectId`.
+Service readiness is checked by service ID, so a same-named service in another
+stack cannot satisfy the deployment's readiness check.
+
 ### High-Level: Complete Deployment
 
 ```typescript
@@ -147,6 +171,7 @@ import { deployProject, Duration } from 'container-deploy';
 const result = await deployProject({
   apiClient: myApiClient,
   projectId: 'your-project-id',
+  stackId: 'your-stack-id',
   waitTimeout: Duration.fromSeconds(600),
 });
 
@@ -163,7 +188,9 @@ import { buildDockerImage, localDockerPush } from 'container-deploy';
 const registry = await setupProjectRegistry(
   apiClient,
   projectId,
-  Duration.fromMinutes(5)
+  stackId,
+  projectShortId,
+  Duration.fromSeconds(300)
 );
 
 // Then handle build/push with your own logic
@@ -175,17 +202,21 @@ await localDockerPush(imageName, registry.host, registry.username, registry.pass
 
 ```typescript
 import {
+  getProjectRegistry,
   checkProjectRegistry,
   createRegistry,
+  deployServiceAs,
   createDomain,
   waitForDomainReachable,
 } from 'container-deploy';
 
 // Check existing registry
-const existing = await checkProjectRegistry(apiClient, projectId);
-if (!existing) {
+const existing = await getProjectRegistry(apiClient, projectId);
+if (existing) {
+  const registryData = await checkProjectRegistry(apiClient, projectId, stackId, existing);
+} else {
   // Create registry service
-  const serviceId = await deployServiceAs(apiClient, projectId, 'registry', {...});
+  const serviceId = await deployServiceAs(apiClient, projectId, stackId, 'project-registry', {...}, timeout);
   
   // Expose via domain
   const domain = await createDomain(apiClient, serviceId, {...});
@@ -204,6 +235,10 @@ Complete deployment pipeline: registry setup → Docker build → push → servi
 **Parameters:**
 - `apiClient` – Mittwald API v2 client instance
 - `projectId` – UUID of target project
+- `stackId` – ID of an existing stack belonging to the project; use this for
+  both services, or as the default when only one service-specific ID is set
+- `registryStackId` – ID of the existing stack hosting the registry service
+- `applicationStackId` – ID of the existing stack hosting the application service
 - `waitTimeout` – Maximum time to wait for operations
 - `imageName` _(optional)_ – Name of the built image (default: `app-image`)
 - `imageTag` _(optional)_ – Tag of the built image (default: `latest`)
@@ -218,13 +253,15 @@ Complete deployment pipeline: registry setup → Docker build → push → servi
 }
 ```
 
-#### `setupProjectRegistry(apiClient, projectId, timeout): Promise<RegistryData>`
+#### `setupProjectRegistry(apiClient, projectId, stackId, projectShortId, timeout): Promise<RegistryData>`
 
 Set up complete registry infrastructure (service + domain + registration).
 
 **Parameters:**
 - `apiClient` – Mittwald API v2 client instance
 - `projectId` – UUID of target project  
+- `stackId` – ID of the existing stack hosting the registry service (required)
+- `projectShortId` – Short project ID used for the registry hostname
 - `timeout` – Maximum time to wait for registry readiness
 
 **Returns:**
@@ -384,14 +421,17 @@ export interface RegistryData {
   source: 'existing' | 'created';
 }
 
-export interface DeployOptions {
+export type DeployOptions = {
   apiClient: MittwaldAPIV2Client;
   projectId: string;
   waitTimeout: Duration;
   environment?: Record<string, string>;
   imageName?: string;  // Image name (default: "app-image")
   imageTag?: string;   // Image tag (default: "latest")
-}
+} & (
+  | { stackId: string; registryStackId?: string; applicationStackId?: string }
+  | { registryStackId: string; applicationStackId: string }
+);
 ```
 
 The optional `host` field in `RegistryData` is intentional – different code paths populate different fields.
@@ -417,10 +457,11 @@ import { deployServiceAs } from '../entities/service';
 export async function setupRegistryAndService(
   apiClient: MittwaldAPIV2Client,
   projectId: string,
+  stackId: string,
   timeout: Duration
 ): Promise<{ registry: RegistryData; serviceId: string }> {
   const registry = await createRegistry(apiClient, projectId);
-  const serviceId = await deployServiceAs(apiClient, projectId, 'app', {...});
+  const serviceId = await deployServiceAs(apiClient, projectId, stackId, 'app', {...}, timeout);
   return { registry, serviceId };
 }
 ```
@@ -533,6 +574,9 @@ For this to work, the dist folder must be committed after building. When release
 {
   apiClient: any;           // Mittwald API client
   projectId: string;        // Project UUID
+  stackId?: string;         // Shared/default stack ID
+  registryStackId?: string; // Registry stack ID; defaults to stackId
+  applicationStackId?: string; // Application stack ID; defaults to stackId
   waitTimeout: Duration;    // Deployment timeout
   environment?: Record<string, string>;  // Build/runtime environment
   imageName?: string;       // Image name (default: "app-image")
@@ -541,6 +585,9 @@ For this to work, the dist folder must be committed after building. When release
   volumes?: Record<string, string>;  // Named volume mounts: {"<volume-name>": "<mount-target>"}
 }
 ```
+Provide `stackId` alone for a shared stack, or provide both service-specific
+stack IDs. `stackId` may also be combined with one service-specific ID to
+override the stack for only that service.
 
 ### `DeployResult`
 ```typescript

@@ -1,0 +1,96 @@
+import { Duration } from "../utils/helpers.js";
+import { MittwaldAPIV2Client, type MittwaldAPIV2 } from "@mittwald/api-client";
+export type RepositoryData = {
+    buildContext: string;
+    ports: string[];
+    dockerfilePath?: string;
+    dockerfileContent?: string;
+    dockerfileCreated?: boolean;
+    imageId?: string;
+    imageName?: string;
+    railpackPlanPath?: string | null;
+};
+export type DeployRes = {
+    serviceName: string;
+    deployedServiceId: string;
+};
+/**
+ * A named volume mounted into a container. Named volumes persist across
+ * container recreations, unlike the container's own filesystem.
+ */
+export type NamedVolumeMount = {
+    /** Name of the volume, unique within the stack. */
+    name: string;
+    /** Path inside the container the volume is mounted at. */
+    mountPath: string;
+};
+export type RegistryData = {
+    username: string;
+    password: string;
+    uri: string;
+    host?: string;
+    registryServiceId: string;
+    registry: any;
+    created?: boolean;
+};
+export type DeployResult = {
+    deployedServiceId: string;
+    serviceName: string;
+};
+type DeployStackOptions = {
+    /** Shared stack ID used for both registry and application services. */
+    stackId: string;
+    /** Optional stack override for the registry service. */
+    registryStackId?: string;
+    /** Optional stack override for the application service. */
+    applicationStackId?: string;
+} | {
+    stackId?: never;
+    /** Stack ID hosting the registry service. */
+    registryStackId: string;
+    /** Stack ID hosting the application service. */
+    applicationStackId: string;
+};
+export type DeployOptions = {
+    apiClient: MittwaldAPIV2Client;
+    projectId: string;
+    waitTimeout: Duration;
+    environment?: Record<string, string>;
+    /** Image name to build and push (default: `app-image`). */
+    imageName?: string;
+    /** Image tag to build and push (default: `latest`). */
+    imageTag?: string;
+    /**
+     * Name of the service to deploy (default: `app-${projectId}`).
+     * Set this to run multiple parallel deployments in the same project.
+     */
+    serviceName?: string;
+    /**
+     * Named volumes to mount into the deployed container, keyed by volume
+     * name with the container path as value, e.g.
+     * `{ "app-data": "/var/lib/app/data" }`.
+     */
+    volumes?: Record<string, string>;
+} & DeployStackOptions;
+/**
+ * Ingress (domain) data from Mittwald API.
+ * Uses the native type from @mittwald/api-client for full compatibility.
+ *
+ * Note: DomainData can represent an ingress at various stages:
+ * - After creation (has id and basic properties)
+ * - After waiting (has ips and tls information)
+ * - During listing (filtered by hostname)
+ */
+export type DomainData = Partial<MittwaldAPIV2.Components.Schemas.IngressIngress> & {
+    id: string;
+};
+export type DomainCreateOptions = {
+    apiClient: MittwaldAPIV2Client;
+    projectId: string;
+    hostname: string;
+    serviceId: string;
+    portProtocol?: string;
+    timeout?: Duration;
+};
+export {};
+//# sourceMappingURL=index.d.ts.map
