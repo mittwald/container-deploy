@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/mittwald/container-deploy/compare/v1.7.0...v1.7.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* remove static dockerfile fallback, expose railpack errors, cleanup ([#21](https://github.com/mittwald/container-deploy/issues/21)) ([204295b](https://github.com/mittwald/container-deploy/commit/204295bb70c5dfd27c6e242068623c1a53dfeeed))
+
 # [1.7.0](https://github.com/mittwald/container-deploy/compare/v1.6.2...v1.7.0) (2026-10-09)
 
 
