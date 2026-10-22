@@ -30,6 +30,7 @@ function makeApiClient(overrides: Record<string, jest.Mock> = {}) {
       id: serviceId,
       serviceName,
       status: "running",
+      requiresRecreate: false,
     }));
 
   let lastServices: any[] = [];
@@ -118,6 +119,45 @@ describe("deployServiceAs volume handling", () => {
     const updateArg = updateStack.mock.calls[0][0];
     expect(updateArg.data.services["app"].volumes).toEqual([]);
     expect(updateArg.data.volumes).toEqual({});
+  });
+});
+
+describe("deployServiceAs recreation", () => {
+  it.each([
+    { status: "running", requiresRecreate: true },
+    { status: "stopped", requiresRecreate: true },
+    { status: "running", requiresRecreate: false },
+    { status: "stopped", requiresRecreate: false },
+  ])("uses requiresRecreate=$requiresRecreate when status is $status", async ({ status, requiresRecreate }) => {
+    const { apiClient, updateStack, recreateService, listServices, serviceId } = makeApiClient();
+    updateStack.mockResolvedValueOnce({
+      status: 200,
+      data: { services: [{ id: serviceId, serviceName: "app", status, requiresRecreate }] },
+    });
+    listServices.mockResolvedValue({
+      status: 200,
+      data: [{ id: serviceId, serviceName: "app", status: "running", requiresRecreate: false }],
+    });
+
+    const result = await deployServiceAs(
+      apiClient,
+      "project-1",
+      "stack-1",
+      "app",
+      { image: "nginx:alpine", description: "app", ports: ["80:80/tcp"] },
+      Duration.fromSeconds(1)
+    );
+
+    expect(result).toBe(serviceId);
+    expect(listServices).toHaveBeenCalledTimes(1);
+    if (requiresRecreate) {
+      expect(recreateService).toHaveBeenCalledTimes(1);
+      expect(recreateService).toHaveBeenCalledWith({ stackId: "stack-1", serviceId });
+      expect(updateStack.mock.invocationCallOrder[0]).toBeLessThan(recreateService.mock.invocationCallOrder[0]);
+      expect(recreateService.mock.invocationCallOrder[0]).toBeLessThan(listServices.mock.invocationCallOrder[0]);
+    } else {
+      expect(recreateService).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -234,11 +274,15 @@ describe.each(["standard", "named"])("%s service stack targeting", deployment =>
         status: 200,
         data: [
           { id: "other-service", serviceName: "app", status: "running" },
-          { id: "svc-123", serviceName: "app", status: deployment === "standard" ? "running" : "stopped" },
+          { id: "svc-123", serviceName: "app", status: "running" },
         ],
       })
       .mockResolvedValue({ status: 200, data: [{ id: "svc-123", serviceName: "app", status: "running" }] });
-    const { apiClient, recreateService } = makeApiClient({ getStack, listServices });
+    const { apiClient, updateStack, recreateService } = makeApiClient({ getStack, listServices });
+    updateStack.mockResolvedValueOnce({
+      status: 200,
+      data: { services: [{ id: "svc-123", serviceName: "app", status: "running", requiresRecreate: true }] },
+    });
 
     await deploy(apiClient);
 

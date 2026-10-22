@@ -124,6 +124,7 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
 /**
  * Generic service deployment function.
  * Deploys a service with given configuration to a project stack.
+ * Recreates it when the update response indicates this is required.
  * Returns the deployed service ID after it transitions to "running" state.
  *
  * @param apiClient The Mittwald API client instance
@@ -182,18 +183,7 @@ export async function deployServiceAs(
 
     const serviceId = service.id;
 
-    // Check if service already existed and needs recreation
-    const allServicesResp = await apiClient.container.listServices({
-        projectId,
-    });
-    assertStatus(allServicesResp, 200);
-
-    const existingService = allServicesResp.data.find(
-        svc => svc.id === serviceId
-    );
-
-    if (existingService && existingService.status !== "running") {
-        // Recreate the service if it was stopped
+    if (service.requiresRecreate) {
         const recreateResp = await apiClient.container.recreateService({
             stackId,
             serviceId,
