@@ -53,7 +53,7 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
         description: "Deployed application",
         ports: repositoryData.ports,
         environment: {
-            PORT: "80",  // XXX: nothing clever, just match fallback so target is correctly set in the ingress.
+            PORT: "80",
             ...environment,
         },
         volumes: volumeEntries.map(([name, mountPath]) => `${name}:${mountPath}`),

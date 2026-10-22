@@ -7,7 +7,7 @@ Reusable orchestration and API adapters for building and deploying containerized
 
 ## Overview
 
-`container-deploy` is a TypeScript library that provides a unified interface for orchestrating Docker-based application deployments with the Mittwald API. It handles the complete deployment pipeline including Docker image building, registry management, and service deployment.
+`@mittwald/container-deploy` is a TypeScript library that provides a unified interface for orchestrating Docker-based application deployments with the Mittwald API. It handles the complete deployment pipeline including Docker image building, registry management, and service deployment.
 
 The library is organized around a **three-tier architecture** that cleanly separates concerns and enables flexible composition:
 
@@ -23,7 +23,7 @@ This architecture enables both high-level deployment (`deployProject()`) and fin
 - **Docker Integration** – Seamless Docker image building and pushing
 - **Registry Management** – Automatic registry setup and configuration
 - **Service Deployment** – Quick and reliable service deployment
-- **Secure Credentials** – Built-in password generation with special character support
+- **Secure Registry Setup** – Generates registry credentials during orchestration
 - **Duration Handling** – Flexible timeout and scheduling utilities
 - **TypeScript First** – Fully typed API for excellent IDE support
 - **Well Tested** – Comprehensive jest test suite included
@@ -31,7 +31,7 @@ This architecture enables both high-level deployment (`deployProject()`) and fin
 ## Installation
 
 ```bash
-npm install container-deploy
+npm install @mittwald/container-deploy
 ```
 
 ### Prerequisites
@@ -105,7 +105,7 @@ Pure API wrappers with no orchestration logic. Each handles a single domain:
   - `checkRailpack()` – Verify Railpack build tool is available
   - `localDockerBuild()` – Build Docker image locally
   - `localBuildWithRailpack()` – Build with Mittwald's Railpack tool
-  - `buildDockerImage()` – Smart build selection (Railpack if available, else Docker)
+  - `buildDockerImage()` – Build with Railpack when a plan exists, otherwise use the repository Dockerfile
   - `localDockerPush()` – Push image to registry
 - **Used By**: `deploy_project.ts` for image building/pushing
 
@@ -165,7 +165,7 @@ stack cannot satisfy the deployment's readiness check.
 ### High-Level: Complete Deployment
 
 ```typescript
-import { deployProject, Duration } from 'container-deploy';
+import { deployProject, Duration } from '@mittwald/container-deploy';
 
 // Deploy entire project (registry setup + build + push + service)
 const result = await deployProject({
@@ -181,8 +181,13 @@ console.log(`✓ Deployed: ${result.serviceName} (${result.deployedServiceId})`)
 ### Mid-Level: Custom Registry Setup
 
 ```typescript
-import { setupProjectRegistry } from 'container-deploy';
-import { buildDockerImage, localDockerPush } from 'container-deploy';
+import {
+  setupProjectRegistry,
+  buildDockerImage,
+  checkRepository,
+  localDockerPush,
+  Duration,
+} from '@mittwald/container-deploy';
 
 // Set up registry with custom timeout
 const registry = await setupProjectRegistry(
@@ -194,34 +199,28 @@ const registry = await setupProjectRegistry(
 );
 
 // Then handle build/push with your own logic
-await buildDockerImage(buildDir, registry.username, registry.password);
-await localDockerPush(imageName, registry.host, registry.username, registry.password);
+const repositoryData = await checkRepository();
+const builtRepositoryData = await buildDockerImage(registry, repositoryData);
+await localDockerPush(builtRepositoryData, registry);
 ```
 
 ### Fine-Grained: Compose Entities Directly
 
 ```typescript
 import {
-  getProjectRegistry,
-  checkProjectRegistry,
-  createRegistry,
-  deployServiceAs,
-  createDomain,
-  waitForDomainReachable,
-} from 'container-deploy';
+  setupProjectRegistry,
+  checkRepository,
+  buildDockerImage,
+  localDockerPush,
+  deployService,
+  Duration,
+} from '@mittwald/container-deploy';
 
-// Check existing registry
-const existing = await getProjectRegistry(apiClient, projectId);
-if (existing) {
-  const registryData = await checkProjectRegistry(apiClient, projectId, stackId, existing);
-} else {
-  // Create registry service
-  const serviceId = await deployServiceAs(apiClient, projectId, stackId, 'project-registry', {...}, timeout);
-  
-  // Expose via domain
-  const domain = await createDomain(apiClient, serviceId, {...});
-  await waitForDomainReachable(apiClient, domain.id, Duration.fromMinutes(2));
-}
+const registry = await setupProjectRegistry(apiClient, projectId, stackId, projectShortId, Duration.fromSeconds(300));
+const repositoryData = await checkRepository();
+const builtRepositoryData = await buildDockerImage(registry, repositoryData);
+await localDockerPush(builtRepositoryData, registry);
+await deployService(apiClient, projectId, stackId, builtRepositoryData, Duration.fromSeconds(600));
 ```
 
 ## Core API Reference
@@ -267,28 +266,30 @@ Set up complete registry infrastructure (service + domain + registration).
 **Returns:**
 ```typescript
 {
-  id: string;              // Registry service ID
-  projectId: string;       // Project UUID
-  host: string;            // Registry hostname/domain
   username: string;        // Registry username
   password: string;        // Registry password
-  source: 'existing' | 'created';  // Whether newly created or already existed
+  uri: string;             // Registry URL/hostname
+  host?: string;           // Registry hostname/domain, when available
+  registryServiceId: string;
+  registry: any;           // Registry API object
+  created?: boolean;       // Whether newly created or already existed
 }
 ```
 
 ### Docker Operations
 
 ```typescript
-import { buildDockerImage, localDockerPush, checkDocker } from 'container-deploy';
+import { buildDockerImage, localDockerPush, checkDocker } from '@mittwald/container-deploy';
+import type { RegistryData, RepositoryData } from '@mittwald/container-deploy';
 
 // Check Docker availability
 await checkDocker();
 
 // Build image (auto-selects Railpack or Docker)
-await buildDockerImage(buildDir, dockerUsername, dockerPassword);
+const builtRepositoryData = await buildDockerImage(registryData, repositoryData);
 
 // Push to registry
-await localDockerPush(imageName, registryHost, username, password);
+await localDockerPush(builtRepositoryData, registryData);
 ```
 
 ### Entity APIs
@@ -302,20 +303,22 @@ import {
   
   // Service
   deployService,
-  deployServiceAs,
   
   // Domain
   createDomain,
   waitForDomainReachable,
   createAndWaitForDomain,
-} from 'container-deploy';
+  Duration,
+} from '@mittwald/container-deploy';
 
 // Example: Create registry domain
 const domain = await createAndWaitForDomain(
   apiClient,
+  projectId,
+  'registry.example.com',
   serviceId,
-  { ingressName: 'my-registry', tlsEnabled: true },
-  Duration.fromMinutes(3)
+  '80/tcp',
+  Duration.fromSeconds(180),
 );
 ```
 
@@ -326,7 +329,7 @@ const domain = await createAndWaitForDomain(
 Flexible duration handling for timeouts and scheduling:
 
 ```typescript
-import { Duration } from 'container-deploy';
+import { Duration } from '@mittwald/container-deploy';
 
 // Creation methods
 const dur1 = Duration.fromSeconds(30);
@@ -341,18 +344,6 @@ const comparison = dur1.compare(dur2);
 // Conversion
 console.log(dur1.seconds);      // 30
 console.log(dur1.milliseconds); // 30000
-```
-
-#### Password Generation
-
-```typescript
-import { generatePassword, generatePasswordWithSpecialChars } from 'container-deploy';
-
-// Basic password (32 chars, alphanumeric)
-const password = generatePassword();
-
-// With special characters (32 chars, 4 special)
-const securePassword = generatePasswordWithSpecialChars(32, 4);
 ```
 
 ## Design Patterns & Architecture Notes
@@ -394,14 +385,13 @@ This allows:
 
 ### 3. **Waiting Patterns**
 
-All operations that require polling use `waitUntil()` helper with exponential backoff:
+Operations that require polling use the internal `waitUntil()` helper:
 
 ```typescript
-// Example from domain.ts
+// Internal pattern used by domain/service helpers
 await waitUntil(
-  () => isIngressReady(ingress),  // Poll condition
-  Duration.fromSeconds(1),        // Initial wait
-  Duration.fromMinutes(3),        // Max total time
+  async () => isIngressReady(ingress) ? true : null,
+  Duration.fromSeconds(180),
 );
 ```
 
@@ -413,12 +403,13 @@ All public functions are fully typed. Internal helper types are in `src/types/in
 
 ```typescript
 export interface RegistryData {
-  id: string;
-  projectId: string;
-  host?: string;              // Optional because checkProjectRegistry doesn't populate
   username: string;
   password: string;
-  source: 'existing' | 'created';
+  uri: string;
+  host?: string;              // Optional because checkProjectRegistry doesn't populate
+  registryServiceId: string;
+  registry: any;
+  created?: boolean;
 }
 
 export type DeployOptions = {
@@ -428,9 +419,11 @@ export type DeployOptions = {
   environment?: Record<string, string>;
   imageName?: string;  // Image name (default: "app-image")
   imageTag?: string;   // Image tag (default: "latest")
+  serviceName?: string;
+  volumes?: Record<string, string>;
 } & (
   | { stackId: string; registryStackId?: string; applicationStackId?: string }
-  | { registryStackId: string; applicationStackId: string }
+  | { stackId?: never; registryStackId: string; applicationStackId: string }
 );
 ```
 
@@ -447,22 +440,28 @@ The optional `host` field in `RegistryData` is intentional – different code pa
 5. **Update exports** – Add to `src/index.ts`
 6. **Add tests** – Mock entity modules in test suite
 
-Example: If you need "registry + service without domain":
+Example: If you need a custom orchestration around the standard app service:
 
 ```typescript
 // src/orchestration/registry_and_service_setup.ts
-import { createRegistry } from '../entities/registry';
-import { deployServiceAs } from '../entities/service';
+import { setupProjectRegistry } from './registry_setup';
+import { deployService } from '../entities/service';
+import { buildDockerImage, localDockerPush } from '../entities/docker';
+import { checkRepository } from '../entities/repository';
 
 export async function setupRegistryAndService(
   apiClient: MittwaldAPIV2Client,
   projectId: string,
   stackId: string,
+  projectShortId: string,
   timeout: Duration
 ): Promise<{ registry: RegistryData; serviceId: string }> {
-  const registry = await createRegistry(apiClient, projectId);
-  const serviceId = await deployServiceAs(apiClient, projectId, stackId, 'app', {...}, timeout);
-  return { registry, serviceId };
+  const registry = await setupProjectRegistry(apiClient, projectId, stackId, projectShortId, timeout);
+  let repositoryData = await checkRepository();
+  repositoryData = await buildDockerImage(registry, repositoryData);
+  await localDockerPush(repositoryData, registry);
+  const { deployedServiceId } = await deployService(apiClient, projectId, stackId, repositoryData, timeout);
+  return { registry, serviceId: deployedServiceId };
 }
 ```
 
@@ -496,7 +495,6 @@ This package follows TypeScript strict mode and Jest testing conventions. Before
 ```bash
 npm run build      # Compile TypeScript
 npm run test       # Run test suite (jest)
-npm run lint       # Type check (tsc --noEmit)
 ```
 
 All new features should include:
@@ -511,19 +509,24 @@ All new features should include:
 src/
 ├── entities/          # Core domain entities
 │   ├── docker.ts      # Docker build configuration
+│   ├── domain.ts      # Domain and ingress handling
 │   ├── project.ts     # Project metadata
-│   ├── registry.ts    # Registry setup and image operations
+│   ├── registry.ts    # Registry API operations
 │   ├── repository.ts  # Repository validation
 │   └── service.ts     # Service deployment logic
 ├── orchestration/     # High-level orchestration
-│   └── deploy_project.ts  # Main deployment orchestrator
+│   ├── deploy_project.ts  # Main deployment orchestrator
+│   └── registry_setup.ts  # Registry setup orchestrator
 ├── types/            # TypeScript type definitions
 │   └── index.ts      # Core types (DeployOptions, DeployResult, etc.)
 └── utils/            # Utility functions
     └── helpers.ts    # Duration, password generation, etc.
 
 test/
-└── deploy.test.ts    # Integration tests for deployProject
+├── deploy.test.ts      # Integration tests for deployProject
+├── docker.test.ts      # Docker build/push tests
+├── repository.test.ts  # Repository checks
+└── service.test.ts     # Service deployment tests
 ```
 
 ## Development
@@ -603,7 +606,7 @@ override the stack for only that service.
   username: string;
   password: string;
   uri: string;
-  host: string;
+  host?: string;
   registryServiceId: string;
   registry: any;
   created?: boolean;
@@ -617,7 +620,6 @@ override the stack for only that service.
   ports: string[];
   dockerfilePath?: string;
   dockerfileContent?: string;
-  dockerfileCreated?: boolean;
   imageId?: string;
   imageName?: string;
   railpackPlanPath?: string | null;
@@ -646,7 +648,7 @@ The deployment pipeline follows these steps:
 
 ## License
 
-MIT License – see [LICENSE](LICENSE) file for details
+MIT License.
 
 ## Author
 
@@ -654,4 +656,4 @@ Lars Bergmann <l.bergmann@mittwald.de>
 
 ---
 
-For more information or issues, please visit the [GitHub repository](https://github.com/your-org/container-deploy).
+For more information or issues, please visit the [GitHub repository](https://github.com/mittwald/container-deploy).

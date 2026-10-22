@@ -8,7 +8,6 @@ export type RepositoryData = {
   ports: string[];
   dockerfilePath?: string;
   dockerfileContent?: string;
-  dockerfileCreated?: boolean;
   imageId?: string;
   imageName?: string;
   railpackPlanPath?: string | null;
