@@ -22,6 +22,7 @@ import {
 
 export async function deployService(apiClient: MittwaldAPIV2Client,
                                     projectId: string,
+                                    stackId: string,
                                     repositoryData: RepositoryData,
                                     timeout: Duration,
                                     environment?: Record<string, string>,
@@ -30,12 +31,12 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
 
     let existing: boolean = false;
     serviceName = serviceName || `app-${projectId}`;
-    const servicesResp = await apiClient.container.listServices({
-        projectId,
+    const stackResp = await apiClient.container.getStack({
+        stackId,
     });
-    assertStatus(servicesResp, 200);
+    assertStatus(stackResp, 200);
 
-    const appService = servicesResp.data.find(
+    const appService = stackResp.data.services?.find(
         svc => svc.serviceName === serviceName
     );
 
@@ -43,7 +44,6 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
         existing = true;
     }
 
-    const stackId = projectId;
     let deployedServiceId: string = "";
 
     const volumeEntries = Object.entries(volumes ?? {});
@@ -98,7 +98,7 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
             const services = servicesResp.data;
 
             const deployedSvc = services.find(
-                svc => svc.serviceName === serviceName
+                svc => svc.id === serviceId
             );
 
             if (!deployedSvc) {
@@ -124,10 +124,12 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
 /**
  * Generic service deployment function.
  * Deploys a service with given configuration to a project stack.
+ * Recreates it when the update response indicates this is required.
  * Returns the deployed service ID after it transitions to "running" state.
  *
  * @param apiClient The Mittwald API client instance
- * @param projectId The project ID (used as stack ID)
+ * @param projectId The project ID containing the stack
+ * @param stackId The ID of the existing stack to deploy to
  * @param serviceName The name of the service to deploy
  * @param serviceConfig Service configuration (image, description, environment, ports, volumes)
  * @param timeout Maximum time to wait for the service to be running
@@ -136,6 +138,7 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
 export async function deployServiceAs(
     apiClient: MittwaldAPIV2Client,
     projectId: string,
+    stackId: string,
     serviceName: string,
     serviceConfig: {
         image: string;
@@ -146,7 +149,6 @@ export async function deployServiceAs(
     },
     timeout: Duration,
 ): Promise<string> {
-    const stackId = projectId;
     let deployedServiceId: string = "";
 
     const { volumes = [], ...serviceRequest } = serviceConfig;
@@ -181,18 +183,7 @@ export async function deployServiceAs(
 
     const serviceId = service.id;
 
-    // Check if service already existed and needs recreation
-    const allServicesResp = await apiClient.container.listServices({
-        projectId,
-    });
-    assertStatus(allServicesResp, 200);
-
-    const existingService = allServicesResp.data.find(
-        svc => svc.serviceName === serviceName
-    );
-
-    if (existingService && existingService.status !== "running") {
-        // Recreate the service if it was stopped
+    if (service.requiresRecreate) {
         const recreateResp = await apiClient.container.recreateService({
             stackId,
             serviceId,
@@ -209,7 +200,7 @@ export async function deployServiceAs(
             assertStatus(servicesResp, 200);
 
             const deployedSvc = servicesResp.data.find(
-                svc => svc.serviceName === serviceName
+                svc => svc.id === serviceId
             );
 
             if (!deployedSvc) {
