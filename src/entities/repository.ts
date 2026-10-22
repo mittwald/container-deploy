@@ -15,26 +15,51 @@ import {
     RepositoryData
 } from "../types/index.js";
 
-// assmuning a very simple static page if no dockerfile is
-// present, later this will become more complex, e.g. with buildpacks
-const MW_DEFAULT_DOCKERFILE_CONTENT = `FROM nginx:alpine
-COPY . /usr/share/nginx/html/
-`;
+const RAILPACK_PREPARE_COMMAND = 'railpack prepare . --plan-out railpack-plan.json --info-out railpack-info.json';
+
+function errorOutputToString(output: unknown): string {
+    if (typeof output === "string") {
+        return output.trim();
+    }
+
+    return output === undefined || output === null ? "" : String(output).trim();
+}
+
+function formatRailpackError(error: unknown): Error {
+    const maybeExecError = error as { stdout?: unknown; stderr?: unknown; message?: unknown };
+    const stdout = errorOutputToString(maybeExecError.stdout);
+    const stderr = errorOutputToString(maybeExecError.stderr);
+    const message = typeof maybeExecError.message === "string" ? maybeExecError.message.trim() : "";
+
+    const details = [
+        "Railpack failed to prepare a build plan.",
+        `Command: ${RAILPACK_PREPARE_COMMAND}`,
+        stdout ? `stdout:\n${stdout}` : null,
+        stderr ? `stderr:\n${stderr}` : null,
+        message ? `error:\n${message}` : null,
+    ].filter((detail): detail is string => detail !== null);
+
+    return new Error(details.join("\n\n"));
+}
 
 async function runRailpack(projectRoot: string): Promise<string | null> {
     try {
-        execSync('railpack prepare . --plan-out railpack-plan.json --info-out railpack-info.json', {
+        execSync(RAILPACK_PREPARE_COMMAND, {
             cwd: projectRoot,
             stdio: 'pipe',
+            encoding: "utf-8",
         });
         const planPath = path.join(projectRoot, 'railpack-plan.json');
         if (await pathExists(planPath)) {
             return planPath;
         }
-    } catch {
-        // railpack failed or not installed, will fall back to default Dockerfile
+    } catch (error) {
+        throw formatRailpackError(error);
     }
-    return null;
+
+    throw new Error(
+        `Railpack finished successfully but did not create railpack-plan.json. Command: ${RAILPACK_PREPARE_COMMAND}`
+    );
 }
 
 function extractPortsFromDockerfile(dockerfileContent: string): string[] {
@@ -78,7 +103,6 @@ export async function checkRepository(environment?: Record<string, string>) {
     const projectRoot = process.cwd();
     const dockerfilePath = path.join(projectRoot, "Dockerfile");
     let dockerfileContent: string;
-    let dockerfileCreated = false;
     let railpackPlanPath: string | null = null;
 
     // 1. Check if Dockerfile exists
@@ -91,15 +115,7 @@ export async function checkRepository(environment?: Record<string, string>) {
         // 1.2 No Dockerfile, try railpack for analysis
         railpackPlanPath = await runRailpack(projectRoot);
 
-        // 1.3 Only create default Dockerfile if railpack failed
-        if (railpackPlanPath === null) {
-            dockerfileContent = MW_DEFAULT_DOCKERFILE_CONTENT;
-            await fs.writeFile(dockerfilePath, dockerfileContent, "utf-8");
-            dockerfileCreated = true;
-        } else {
-            // railpack succeeded, don't create default Dockerfile
-            dockerfileContent = "";
-        }
+        dockerfileContent = "";
     }
 
     // Extract ports from the Dockerfile and create proper host:container mappings
@@ -119,7 +135,6 @@ export async function checkRepository(environment?: Record<string, string>) {
     const repositoryData = {
         dockerfilePath,
         dockerfileContent,
-        dockerfileCreated,
         buildContext: projectRoot,
         ports,
         railpackPlanPath,
