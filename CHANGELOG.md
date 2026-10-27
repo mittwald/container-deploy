@@ -1,3 +1,13 @@
+## [2.0.0](https://github.com/mittwald/container-deploy/compare/v1.7.1...v2.0.0) (2026-10-27)
+
+### ⚠ BREAKING CHANGES
+
+* make container-deploy stack-aware (#22)
+
+### Bug Fixes
+
+* make container-deploy stack-aware ([#22](https://github.com/mittwald/container-deploy/issues/22)) ([dfdc54d](https://github.com/mittwald/container-deploy/commit/dfdc54ddcf12251e8033a300a684a002829e34cd))
+
 ## [1.7.1](https://github.com/mittwald/container-deploy/compare/v1.7.0...v1.7.1) (2026-10-22)
 
 
