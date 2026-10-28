@@ -76,9 +76,13 @@ Pure API wrappers with no orchestration logic. Each handles a single domain:
 #### `entities/registry.ts` – Container Registry API
 - **Responsibility**: Container registry operations via Mittwald API
 - **Key Functions**:
-  - `getProjectRegistry()` – Fetch existing registry for a project
+  - `getProjectRegistry()` – Fetch the project registry (the `registry` subdomain of the project's default domain)
+  - `getProjectRegistryUri(apiClient, projectId)` – Get the URI of the project registry
   - `createRegistry()` – Create new registry service  
+  - `updateRegistryCredentials(apiClient, registryId, credentials)` – Set the credentials of an existing registry
+  - `getRegistryService(apiClient, stackId)` – Find the registry service in a stack and read its credentials
   - `checkProjectRegistry(apiClient, projectId, stackId, registry)` – Read and verify registry credentials from the selected stack
+  - `MW_REGISTRY_SERVICE_NAME` – Name of the registry service (`project-registry`), e.g. to locate the stack hosting it
 - **Used By**: `registry_setup.ts`, direct consumers for registry-only operations
 
 #### `entities/service.ts` – Service Deployment API
@@ -96,6 +100,7 @@ Pure API wrappers with no orchestration logic. Each handles a single domain:
   - `waitForDomainReachable()` – Poll until domain IPs assigned and TLS certificate created
   - `waitForIngressReady()` – Semantic alias for clarity in orchestration contexts
   - `createAndWaitForDomain()` – Combine domain creation and waiting
+  - `findDefaultDomain(apiClient, projectId)` – Find the project's default ingress (`isDefault`)
 - **Used By**: `registry_setup.ts` to expose registry, direct consumers for domain operations
 
 #### `entities/docker.ts` – Docker Operations
@@ -115,13 +120,14 @@ Multi-step workflows that compose entities to achieve higher-level goals:
 
 #### `orchestration/registry_setup.ts` – Complete Registry Orchestration
 - **Responsibility**: Full registry setup pipeline (service → domain → registration)
-- **Key Function**: `setupProjectRegistry()` executes 6 steps:
-  1. Check if registry already exists
-  2. Create registry service via `service.ts`
-  3. Create and wait for registry domain via `domain.ts`
-  4. **Wait 2 minutes** for DNS/TLS propagation (documented Mittwald platform behavior)
-  5. Register in Mittwald API via `registry.ts`
+- **Key Function**: `setupProjectRegistry()` brings the registry into the desired state from any partial state:
+  1. Look up the registry record (by URI `registry.<default domain>`, e.g. `registry.p-abc123.project.space`) and the registry service in the stack
+  2. Deploy the registry service via `service.ts` if it is missing or has no credentials (existing credentials are kept)
+  3. Create or re-target the registry domain via `domain.ts` if it does not route to the service
+  4. **Wait 2 minutes** for DNS/TLS propagation when a new domain was created (documented Mittwald platform behavior)
+  5. Register in Mittwald API via `registry.ts`, or update the credentials of the existing record
   6. Return registry details
+- Other registries configured in the project are left alone.
 - **Uses**: All entity modules (registry, service, domain)
 - **Pattern**: Step orchestration with error handling and timeouts
 
@@ -156,8 +162,10 @@ This is a breaking API change:
 - `checkProjectRegistry(apiClient, projectId, stackId, registry)`
 
 The registry service uses the registry stack, while the application service uses
-the application stack. When reusing an existing project registry, its
-`project-registry` service must be in the selected registry stack. Registry
+the application stack. When reusing an existing project registry, pass the stack
+that hosts its `project-registry` service (exported as `MW_REGISTRY_SERVICE_NAME`);
+otherwise a new registry service is deployed into the selected stack and the
+existing registry record and domain are pointed to it. Registry
 records and domains remain project-scoped; their APIs still use `projectId`.
 Service readiness is checked by service ID, so a same-named service in another
 stack cannot satisfy the deployment's readiness check.
@@ -194,7 +202,7 @@ const registry = await setupProjectRegistry(
   apiClient,
   projectId,
   stackId,
-  projectShortId,
+  undefined, // projectShortId (unused)
   Duration.fromSeconds(300)
 );
 
@@ -216,7 +224,7 @@ import {
   Duration,
 } from '@mittwald/container-deploy';
 
-const registry = await setupProjectRegistry(apiClient, projectId, stackId, projectShortId, Duration.fromSeconds(300));
+const registry = await setupProjectRegistry(apiClient, projectId, stackId, undefined, Duration.fromSeconds(300));
 const repositoryData = await checkRepository();
 const builtRepositoryData = await buildDockerImage(registry, repositoryData);
 await localDockerPush(builtRepositoryData, registry);
@@ -260,7 +268,7 @@ Set up complete registry infrastructure (service + domain + registration).
 - `apiClient` – Mittwald API v2 client instance
 - `projectId` – UUID of target project  
 - `stackId` – ID of the existing stack hosting the registry service (required)
-- `projectShortId` – Short project ID used for the registry hostname
+- `projectShortId` – Unused; the registry hostname is the `registry` subdomain of the project's default domain. Kept for backwards compatibility, pass `undefined`
 - `timeout` – Maximum time to wait for registry readiness
 
 **Returns:**
@@ -453,10 +461,9 @@ export async function setupRegistryAndService(
   apiClient: MittwaldAPIV2Client,
   projectId: string,
   stackId: string,
-  projectShortId: string,
   timeout: Duration
 ): Promise<{ registry: RegistryData; serviceId: string }> {
-  const registry = await setupProjectRegistry(apiClient, projectId, stackId, projectShortId, timeout);
+  const registry = await setupProjectRegistry(apiClient, projectId, stackId, undefined, timeout);
   let repositoryData = await checkRepository();
   repositoryData = await buildDockerImage(registry, repositoryData);
   await localDockerPush(repositoryData, registry);

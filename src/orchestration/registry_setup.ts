@@ -1,7 +1,8 @@
 /*
     Orchestration module for complete registry setup.
     Coordinates service deployment, domain creation, and registry registration.
-    Handles the multi-step process of setting up a project registry from scratch.
+    Brings a project registry into the desired state from whatever state it is
+    currently in (nothing set up, partially set up, or fully set up).
 */
 
 import {
@@ -14,20 +15,26 @@ import {
 } from "../utils/helpers.js";
 
 import {
-    getProjectRegistry,
+    findRegistryByUri,
+    getProjectRegistryUri,
+    getRegistryService,
     createRegistry,
-    checkProjectRegistry,
+    updateRegistryCredentials,
+    MW_REGISTRY_SERVICE_NAME,
+    MW_REGISTRY_PORT_PROTOCOL,
 } from "../entities/registry.js";
 import { deployServiceAs } from "../entities/service.js";
-import { createAndWaitForDomain, waitForDomainReachability } from "../entities/domain.js";
+import {
+    createAndWaitForDomain,
+    findDomainByHostname,
+    waitForDomainReachability,
+} from "../entities/domain.js";
 
-import type { RegistryData } from "../types/index.js";
+import type { DomainData, RegistryData } from "../types/index.js";
 
 // Registry service configuration
-const MW_REGISTRY_SERVICE_NAME = "project-registry";
 const MW_REGISTRY_IMAGE = "mittwald/registry:3";
 const MW_REGISTRY_PORTS = ["5000:5000/tcp"];
-const MW_REGISTRY_PORT_PROTOCOL = "5000/tcp";
 // Persist pushed images by mounting a named volume at the registry's storage
 // directory. Without this, all images in the registry are lost whenever the
 // container is recreated. See: https://github.com/mittwald/container-deploy/issues/17
@@ -43,42 +50,77 @@ function generateUsername(): string {
 }
 
 /**
+ * Helper: Check whether an ingress routes its root path to the given
+ * registry service.
+ */
+function routesToRegistryService(ingress: DomainData, serviceId: string): boolean {
+    return (ingress.paths ?? []).some(path => {
+        const target = path.target as any;
+        return (
+            path.path === "/" &&
+            target.container?.id === serviceId &&
+            target.container?.portProtocol === MW_REGISTRY_PORT_PROTOCOL
+        );
+    });
+}
+
+/**
  * Orchestrates the complete setup of a project registry.
- * If a registry already exists, returns its information.
- * If not, creates: service → ingress/domain → registry API record.
  *
- * WARNING: The ingress setup is known to be flaky. This step includes
- * a 2-minute wait to allow DNS propagation and TLS certificate creation.
+ * Reconciles each part of the registry with the desired state, so that it
+ * recovers from partially set up registries:
+ *
+ * 1. a `project-registry` service is running in the given stack (existing
+ *    credentials from its environment are kept),
+ * 2. an ingress at the `registry` subdomain of the project's default domain
+ *    (e.g. `registry.<projectShortId>.project.space`) routes to it,
+ * 3. the project has a registry record for that URI, with the credentials
+ *    from the service's environment.
+ *
+ * Other registries configured in the project are left alone.
+ *
+ * WARNING: The ingress setup is known to be flaky. When a new ingress is
+ * created, this step includes a 2-minute wait to allow DNS propagation and
+ * TLS certificate creation.
  * See: https://docs.mittwald.de/ for known issues.
  *
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID where the registry should be created
  * @param stackId The ID of the existing stack hosting the registry service
- * @param projectShortId The short ID of the project (for domain subdomain)
+ * @param _projectShortId Unused; the registry hostname is derived from the
+ *     project's default domain. Kept for backwards compatibility.
  * @param timeout Maximum time to wait for service/domain availability
- * @returns Registry information including credentials and service ID
+ * @returns Registry information including credentials and service ID;
+ *     `created` is true if the registry record was created in this run
  */
 export async function setupProjectRegistry(
     apiClient: MittwaldAPIV2Client,
     projectId: string,
     stackId: string,
-    projectShortId: string,
+    _projectShortId: string | undefined,
     timeout: Duration,
 ): Promise<RegistryData> {
-    let registryInfo: RegistryData;
+    const uri = await getProjectRegistryUri(apiClient, projectId);
 
-    // Step 1: Check if registry already exists
-    const registry = await getProjectRegistry(apiClient, projectId);
+    // Step 1: Determine the current state
+    const registry = await findRegistryByUri(apiClient, projectId, uri);
+    const existingService = await getRegistryService(apiClient, stackId);
 
-    if (!registry) {
-        // Step 2: Generate credentials for new registry
-        const username = generateUsername();
-        const password = generatePasswordWithSpecialChars();
-        const subdomain = `registry.${projectShortId}`;
-        const uri = `${subdomain}.project.space`;
+    // Step 2: Deploy the registry service, unless it already exists with
+    // credentials. Existing credentials are never replaced, so that clients
+    // that already authenticated against the registry keep working.
+    let registryServiceId: string;
+    let username: string;
+    let password: string;
+    let serviceDeployed = false;
 
-        // Step 3: Deploy registry service
-        const registryServiceId = await deployServiceAs(
+    if (existingService?.username && existingService.password) {
+        ({ serviceId: registryServiceId, username, password } = existingService);
+    } else {
+        username = generateUsername();
+        password = generatePasswordWithSpecialChars();
+
+        registryServiceId = await deployServiceAs(
             apiClient,
             projectId,
             stackId,
@@ -95,8 +137,16 @@ export async function setupProjectRegistry(
             },
             timeout,
         );
+        serviceDeployed = true;
+    }
 
-        // Step 4: Create domain/ingress for registry
+    // Step 3: Create the ingress, or re-target it to the registry service
+    const existingIngress = await findDomainByHostname(apiClient, projectId, uri);
+    const ingressConfigured =
+        existingIngress !== null && routesToRegistryService(existingIngress, registryServiceId);
+    let ingressCreated = false;
+
+    if (!ingressConfigured) {
         const domainResult = await createAndWaitForDomain(
             apiClient,
             projectId,
@@ -105,48 +155,46 @@ export async function setupProjectRegistry(
             MW_REGISTRY_PORT_PROTOCOL,
             timeout,
         );
+        ingressCreated = !domainResult.wasReused;
+    }
 
-        // Step 5: Verify registry is HTTP-reachable before registering in API
+    if (serviceDeployed || !ingressConfigured) {
+        // Step 4: Verify registry is HTTP-reachable before registering in API
         // This ensures we don't register a registry that's not yet accessible, preventing
         // race conditions where subsequent operations fail because the registry endpoint is unreachable.
         // Polling the /v2/ endpoint actively verifies the service is responding over HTTP.
         await waitForDomainReachability(uri, timeout);
-        
-        // Step 5.1: Additional wait to allow DNS propagation and TLS certificate issuance
+    }
+
+    if (ingressCreated) {
+        // Step 4.1: Additional wait to allow DNS propagation and TLS certificate issuance
         // WE reaching registry does not mean other machines can reach it immediately due to
         // DNS caching and whatever. This wait is a pragmatic solution to mitigate these issues.
         await new Promise(resolve => setTimeout(resolve, 2 * 60 * 1000));
-
-        // Step 6: Register the registry in Mittwald API
-        const registryCreationPayload = {
-            uri,
-            description: `Default registry for project ${projectId}`,
-            credentials: { username, password },
-        };
-        const createdRegistry = await createRegistry(
-            apiClient,
-            projectId,
-            registryCreationPayload,
-        );
-
-        registryInfo = {
-            username,
-            password,
-            uri,
-            registryServiceId,
-            registry: createdRegistry,
-            created: true,
-        };
-    } else {
-        // Registry exists: fetch and validate credentials
-        registryInfo = await checkProjectRegistry(
-            apiClient,
-            projectId,
-            stackId,
-            registry,
-        );
-        registryInfo.created = false;
     }
 
-    return registryInfo;
+    // Step 5: Register the registry in Mittwald API, or update its credentials.
+    // The API does not return stored passwords, so credentials are always set
+    // to make sure they match the service.
+    const credentials = { username, password };
+    let registryRecord = registry;
+
+    if (registry) {
+        await updateRegistryCredentials(apiClient, registry.id, credentials);
+    } else {
+        registryRecord = await createRegistry(apiClient, projectId, {
+            uri,
+            description: `Default registry for project ${projectId}`,
+            credentials,
+        });
+    }
+
+    return {
+        username,
+        password,
+        uri,
+        registryServiceId,
+        registry: registryRecord,
+        created: !registry,
+    };
 }

@@ -3,10 +3,6 @@ import { Duration } from "../src/utils/helpers";
 import type { DeployOptions, DeployResult } from "../src/types/index";
 
 // --- Mock all the entities that deployProject depends on
-jest.mock("../src/entities/project", () => ({
-  getProjectShortIdFromUuid: jest.fn(async () => "test-short-id"),
-}));
-
 jest.mock("../src/entities/docker", () => ({
   checkRequiredTools: jest.fn(),
   buildDockerImage: jest.fn(async (registryData, repositoryData) => ({
@@ -72,12 +68,6 @@ describe("deployProject integration test", () => {
     expect(result.serviceName).toBe("app-test-project");
 
     // Verify that all expected functions were called
-    const projectModule = require("../src/entities/project");
-    expect(projectModule.getProjectShortIdFromUuid).toHaveBeenCalledWith(
-      options.apiClient,
-      testProjectId
-    );
-
     const dockerModule = require("../src/entities/docker");
     expect(dockerModule.checkRequiredTools).toHaveBeenCalled();
     expect(dockerModule.buildDockerImage).toHaveBeenCalled();
@@ -88,7 +78,7 @@ describe("deployProject integration test", () => {
       options.apiClient,
       testProjectId,
       options.stackId,
-      "test-short-id",
+      undefined,
       testTimeout
     );
 
@@ -126,7 +116,7 @@ describe("deployProject integration test", () => {
       options.apiClient,
       options.projectId,
       options.registryStackId,
-      "test-short-id",
+      undefined,
       options.waitTimeout
     );
 

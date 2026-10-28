@@ -17,10 +17,14 @@ export {
 export type { ImageOptions } from "./entities/docker.js";
 
 // Entity operations
-export { 
-  getProjectRegistry, 
+export {
+  getProjectRegistry,
+  getProjectRegistryUri,
+  getRegistryService,
   createRegistry,
-  checkProjectRegistry 
+  updateRegistryCredentials,
+  checkProjectRegistry,
+  MW_REGISTRY_SERVICE_NAME
 } from "./entities/registry.js";
 export { checkRepository } from "./entities/repository.js";
 export { deployService, deployServiceAs } from "./entities/service.js";
@@ -29,7 +33,8 @@ export {
   createDomain,
   waitForDomainReachable,
   waitForIngressReady,
-  createAndWaitForDomain
+  createAndWaitForDomain,
+  findDefaultDomain
 } from "./entities/domain.js";
 
 // Type exports

@@ -13,45 +13,67 @@ import {
 import type {
     RegistryData,
 } from "../types/index.js";
+import { findDefaultDomain } from "./domain.js";
 
 // type shorthands
 type Registry = MittwaldAPIV2.Components.Schemas.ContainerRegistry;
 
+/** Name of the container service that runs the project registry. */
+export const MW_REGISTRY_SERVICE_NAME = "project-registry";
+export const MW_REGISTRY_PORT_PROTOCOL = "5000/tcp";
+
 /**
- * Fetches the existing (non-default) registry for a project.
+ * Returns the URI of the project registry, which is the `registry`
+ * subdomain of the project's default domain.
+ *
+ * @param apiClient The Mittwald API client instance
+ * @param projectId The project ID
+ * @returns The registry URI, e.g. `registry.<projectShortId>.project.space`
+ */
+export async function getProjectRegistryUri(
+    apiClient: MittwaldAPIV2Client,
+    projectId: string,
+): Promise<string> {
+    const defaultDomain = await findDefaultDomain(apiClient, projectId);
+    return `registry.${defaultDomain.hostname}`;
+}
+
+/**
+ * Fetches the registry with the given URI from a project.
  *
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID to fetch registry for
- * @returns The registry object, or undefined if no custom registry exists
+ * @param uri The URI of the registry
+ * @returns The registry object, or undefined if no registry has that URI
  */
-export async function getProjectRegistry(
+export async function findRegistryByUri(
     apiClient: MittwaldAPIV2Client,
     projectId: string,
-) {
-    /*
-        Fetch the registry information for the project using the
-        API client. Default registries are identified by URI
-    */
-
+    uri: string,
+): Promise<Registry | undefined> {
     const registriesResp = await apiClient.container.listRegistries({
         projectId,
     });
     assertStatus(registriesResp, 200);
 
-    const isDefaultRegistry = (r: Registry): boolean => {
-        const uri = r.uri || "";
-        return (
-            uri.includes("docker.io") ||
-            uri.includes("ghcr.io") ||
-            uri.includes("gitlab.com")
-        );
-    };
+    return registriesResp.data.find(r => r.uri === uri);
+}
 
-    const registry = registriesResp.data.find(
-        r => !isDefaultRegistry(r)
-    );
-
-    return registry;
+/**
+ * Fetches the project registry, identified by its URI (see
+ * `getProjectRegistryUri`). Other registries configured in the project
+ * are ignored.
+ *
+ * @param apiClient The Mittwald API client instance
+ * @param projectId The project ID to fetch registry for
+ * @returns The registry object, or undefined if no project registry exists
+ */
+export async function getProjectRegistry(
+    apiClient: MittwaldAPIV2Client,
+    projectId: string,
+): Promise<Registry | undefined> {
+    const uri = await getProjectRegistryUri(apiClient, projectId);
+    return findRegistryByUri(apiClient, projectId, uri);
 }
 
 /**
@@ -81,6 +103,65 @@ export async function createRegistry(
 }
 
 /**
+ * Sets the credentials of an existing registry in the Mittwald API.
+ *
+ * @param apiClient The Mittwald API client instance
+ * @param registryId The ID of the registry to update
+ * @param credentials The credentials to store for the registry
+ */
+export async function updateRegistryCredentials(
+    apiClient: MittwaldAPIV2Client,
+    registryId: string,
+    credentials: { username: string; password: string },
+): Promise<void> {
+    const updateResp = await apiClient.container.updateRegistry({
+        registryId,
+        data: { credentials },
+    });
+    assertStatus(updateResp, 204);
+}
+
+/**
+ * Looks up the registry service in a stack and reads its credentials
+ * from the deployed environment.
+ *
+ * @param apiClient The Mittwald API client instance
+ * @param stackId The ID of the stack hosting the registry service
+ * @returns The service ID and credentials (empty if not set), or undefined if
+ *     the stack has no registry service
+ */
+export async function getRegistryService(
+    apiClient: MittwaldAPIV2Client,
+    stackId: string,
+): Promise<{ serviceId: string; username: string; password: string } | undefined> {
+    const stackResp = await apiClient.container.getStack({
+        stackId,
+    });
+    assertStatus(stackResp, 200);
+
+    const registryService = stackResp.data.services?.find(
+        svc => svc.serviceName === MW_REGISTRY_SERVICE_NAME
+    );
+
+    if (!registryService) {
+        return undefined;
+    }
+
+    const serviceDetailsResp = await apiClient.container.getService({
+        serviceId: registryService.id,
+        stackId,
+    });
+    assertStatus(serviceDetailsResp, 200);
+
+    const envs = serviceDetailsResp.data.deployedState?.envs;
+    return {
+        serviceId: registryService.id,
+        username: envs?.REGISTRY_USER ?? "",
+        password: envs?.REGISTRY_PASSWORD ?? "",
+    };
+}
+
+/**
  * Checks and extracts credentials from an existing registry service.
  * Validates that the service and domain are properly configured.
  *
@@ -101,17 +182,7 @@ export async function checkProjectRegistry(
         service environment and validate ingress is configured.
     */
 
-    const MW_REGISTRY_SERVICE_NAME = "project-registry";
-    const MW_REGISTRY_PORT_PROTOCOL = "5000/tcp";
-
-    const stackResp = await apiClient.container.getStack({
-        stackId,
-    });
-    assertStatus(stackResp, 200);
-
-    const registryService = stackResp.data.services?.find(
-        svc => svc.serviceName === MW_REGISTRY_SERVICE_NAME
-    );
+    const registryService = await getRegistryService(apiClient, stackId);
 
     if (!registryService) {
         throw new Error(
@@ -119,17 +190,7 @@ export async function checkProjectRegistry(
         );
     }
 
-    const registryServiceId = registryService.id;
-
-    const serviceDetailsResp = await apiClient.container.getService({
-        serviceId: registryServiceId,
-        stackId,
-    });
-    assertStatus(serviceDetailsResp, 200);
-
-    const service = serviceDetailsResp.data;
-    const username = service.deployedState?.envs?.REGISTRY_USER ?? "";
-    const password = service.deployedState?.envs?.REGISTRY_PASSWORD ?? "";
+    const { serviceId: registryServiceId, username, password } = registryService;
 
     if (!username || !password) {
         throw new Error(

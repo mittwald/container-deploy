@@ -119,6 +119,39 @@ export async function waitForIngressReady(
 }
 
 /**
+ * Lists all domains/ingresses of a project.
+ *
+ * @param apiClient The Mittwald API client instance
+ * @param projectId The project ID to list ingresses for
+ * @returns The ingresses of the project
+ * @throws Error if API call fails
+ */
+async function listProjectDomains(
+    apiClient: MittwaldAPIV2Client,
+    projectId: string,
+): Promise<DomainData[]> {
+    /*
+        NOTE: Using deprecated endpoint for the same reason as in registry.ts.
+        The modern endpoint (GET /v2/ingresses) does not work in all scopes/contexts.
+        Using the underlying axios HTTP client to call the deprecated endpoint directly.
+
+        Reference: https://github.com/mittwald/api-client-js/blob/master/packages/generator/src/generation/model/paths/Path.ts
+        Commit: "Do not export deprecated operations" (88474cd, 3 years ago)
+    */
+    const listResp = await apiClient.axios.get(
+        `/v2/projects/${projectId}/ingresses`
+    );
+
+    if (listResp.status !== 200) {
+        throw new Error(
+            `Failed to fetch ingresses for project ${projectId}. Status: ${listResp.status}`
+        );
+    }
+
+    return listResp.data as DomainData[];
+}
+
+/**
  * Finds an existing domain/ingress by hostname for a given project.
  * Lists all ingresses and filters by hostname to locate an existing domain.
  *
@@ -134,31 +167,35 @@ export async function findDomainByHostname(
     hostname: string,
 ): Promise<DomainData | null> {
     try {
-        /*
-            NOTE: Using deprecated endpoint for the same reason as in registry.ts.
-            The modern endpoint (GET /v2/ingresses) does not work in all scopes/contexts.
-            Using the underlying axios HTTP client to call the deprecated endpoint directly.
-            
-            Reference: https://github.com/mittwald/api-client-js/blob/master/packages/generator/src/generation/model/paths/Path.ts
-            Commit: "Do not export deprecated operations" (88474cd, 3 years ago)
-        */
-        const listResp = await apiClient.axios.get(
-            `/v2/projects/${projectId}/ingresses`
-        );
-
-        if (listResp.status !== 200) {
-            throw new Error(
-                `Failed to fetch ingresses for project ${projectId}. Status: ${listResp.status}`
-            );
-        }
-
-        const ingresses = listResp.data as DomainData[];
+        const ingresses = await listProjectDomains(apiClient, projectId);
         const existingIngress = ingresses.find((ing: any) => ing.hostname === hostname);
 
         return existingIngress || null;
     } catch (error) {
         throw new Error(`Failed to look up domain by hostname "${hostname}": ${error}`);
     }
+}
+
+/**
+ * Finds the default domain/ingress of a project (e.g. `<projectShortId>.project.space`).
+ *
+ * @param apiClient The Mittwald API client instance
+ * @param projectId The project ID to search ingresses in
+ * @returns The default ingress of the project
+ * @throws Error if API call fails or the project has no default ingress
+ */
+export async function findDefaultDomain(
+    apiClient: MittwaldAPIV2Client,
+    projectId: string,
+): Promise<DomainData> {
+    const ingresses = await listProjectDomains(apiClient, projectId);
+    const defaultIngress = ingresses.find(ing => ing.isDefault);
+
+    if (!defaultIngress) {
+        throw new Error(`Project ${projectId} has no default domain.`);
+    }
+
+    return defaultIngress;
 }
 
 /**
