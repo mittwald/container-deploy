@@ -17,20 +17,27 @@ jest.mock("../src/entities/service", () => ({
 
 jest.mock("../src/entities/domain", () => ({
   createAndWaitForDomain: jest.fn(async () => ({ id: "ingress-1" })),
+  findDomainByHostname: jest.fn(),
   waitForDomainReachability: jest.fn(async () => true),
 }));
 
-import { checkProjectRegistry } from "../src/entities/registry";
+import { checkProjectRegistry, getProjectRegistry } from "../src/entities/registry";
 import { deployServiceAs } from "../src/entities/service";
-import { createAndWaitForDomain } from "../src/entities/domain";
+import { createAndWaitForDomain, findDomainByHostname, waitForDomainReachability } from "../src/entities/domain";
 import { setupProjectRegistry } from "../src/orchestration/registry_setup";
 import { Duration } from "../src/utils/helpers";
+
+const registryIngress = {
+  id: "ingress-1",
+  hostname: "registry.p-test.project.space",
+  paths: [{ path: "/", target: { container: { id: "registry-service", portProtocol: "5000/tcp" } } }],
+};
 
 function makeApiClient() {
   const registry = { id: "registry-1", uri: "registry.p-test.project.space" };
   const apiClient = {
     container: {
-      listRegistries: jest.fn(async () => ({ status: 200, data: [registry] })),
+      listRegistries: jest.fn(async () => ({ status: 200, data: [registry] as any[] })),
       getStack: jest.fn(async () => ({
         status: 200,
         data: { services: [{ id: "registry-service", serviceName: "project-registry" }] },
@@ -44,6 +51,7 @@ function makeApiClient() {
         data: { deployedState: { envs: { REGISTRY_USER: "user", REGISTRY_PASSWORD: "password" } } },
       })),
       createRegistry: jest.fn(async () => ({ status: 201, data: registry })),
+      updateRegistry: jest.fn(async () => ({ status: 204, data: {} })),
     },
     axios: {
       get: jest.fn(async () => ({
@@ -55,9 +63,17 @@ function makeApiClient() {
   return { apiClient, registry };
 }
 
+async function runSetup(apiClient: any, timeout = Duration.fromSeconds(30)) {
+  jest.useFakeTimers();
+  const resultPromise = setupProjectRegistry(apiClient, "project-1", "stack-1", "p-test", timeout);
+  await jest.advanceTimersByTimeAsync(120000);
+  return resultPromise;
+}
+
 describe("registry stack targeting", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (findDomainByHostname as jest.Mock).mockResolvedValue(registryIngress);
   });
 
   afterEach(() => {
@@ -93,23 +109,24 @@ describe("registry stack targeting", () => {
   it("forwards the selected stack when reusing an existing registry", async () => {
     const { apiClient } = makeApiClient();
 
-    const result = await setupProjectRegistry(apiClient as any, "project-1", "stack-1", "p-test", Duration.fromSeconds(30));
+    const result = await runSetup(apiClient);
 
     expect(result.created).toBe(false);
     expect(apiClient.container.listRegistries).toHaveBeenCalledWith({ projectId: "project-1" });
     expect(apiClient.container.getService).toHaveBeenCalledWith({ stackId: "stack-1", serviceId: "registry-service" });
     expect(deployServiceAs).not.toHaveBeenCalled();
+    expect(createAndWaitForDomain).not.toHaveBeenCalled();
+    expect(waitForDomainReachability).not.toHaveBeenCalled();
   });
 
   it("deploys a new registry into the selected stack and registers it with the project", async () => {
-    jest.useFakeTimers();
     const { apiClient } = makeApiClient();
     apiClient.container.listRegistries.mockResolvedValueOnce({ status: 200, data: [] });
+    apiClient.container.getStack.mockResolvedValueOnce({ status: 200, data: { services: [] } });
+    (findDomainByHostname as jest.Mock).mockResolvedValueOnce(null);
     const timeout = Duration.fromSeconds(30);
 
-    const resultPromise = setupProjectRegistry(apiClient as any, "project-1", "stack-1", "p-test", timeout);
-    await jest.advanceTimersByTimeAsync(120000);
-    const result = await resultPromise;
+    const result = await runSetup(apiClient, timeout);
 
     expect(result.created).toBe(true);
     expect(deployServiceAs).toHaveBeenCalledWith(
@@ -124,5 +141,129 @@ describe("registry stack targeting", () => {
       apiClient, "project-1", "registry.p-test.project.space", "registry-service", "5000/tcp", timeout,
     );
     expect(apiClient.container.createRegistry).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }));
+  });
+});
+
+describe("registry reconciliation", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (findDomainByHostname as jest.Mock).mockResolvedValue(registryIngress);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("always sets the record credentials from the service environment", async () => {
+    const { apiClient } = makeApiClient();
+
+    const result = await runSetup(apiClient);
+
+    expect(result).toMatchObject({ username: "user", password: "password", created: false });
+    expect(apiClient.container.updateRegistry).toHaveBeenCalledWith({
+      registryId: "registry-1",
+      data: { credentials: { username: "user", password: "password" } },
+    });
+    expect(apiClient.container.createRegistry).not.toHaveBeenCalled();
+  });
+
+  it("re-deploys a missing service and updates the existing record with the new credentials", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.getStack.mockResolvedValueOnce({ status: 200, data: { services: [] } });
+
+    const result = await runSetup(apiClient);
+
+    expect(deployServiceAs).toHaveBeenCalledTimes(1);
+    const env = (deployServiceAs as jest.Mock).mock.calls[0][4].environment;
+    expect(result).toMatchObject({ username: env.REGISTRY_USER, password: env.REGISTRY_PASSWORD, created: false });
+    expect(apiClient.container.updateRegistry).toHaveBeenCalledWith({
+      registryId: "registry-1",
+      data: { credentials: { username: env.REGISTRY_USER, password: env.REGISTRY_PASSWORD } },
+    });
+    expect(apiClient.container.createRegistry).not.toHaveBeenCalled();
+    expect(waitForDomainReachability).toHaveBeenCalledWith("registry.p-test.project.space", expect.anything());
+  });
+
+  it("creates a missing ingress without re-deploying the service", async () => {
+    const { apiClient } = makeApiClient();
+    (findDomainByHostname as jest.Mock).mockResolvedValueOnce(null);
+
+    await runSetup(apiClient);
+
+    expect(deployServiceAs).not.toHaveBeenCalled();
+    expect(createAndWaitForDomain).toHaveBeenCalledWith(
+      apiClient, "project-1", "registry.p-test.project.space", "registry-service", "5000/tcp", expect.anything(),
+    );
+  });
+
+  it("re-targets an ingress that does not route to the registry service", async () => {
+    const { apiClient } = makeApiClient();
+    (findDomainByHostname as jest.Mock).mockResolvedValueOnce({
+      ...registryIngress,
+      paths: [{ path: "/", target: { container: { id: "deleted-service", portProtocol: "5000/tcp" } } }],
+    });
+
+    await runSetup(apiClient);
+
+    expect(createAndWaitForDomain).toHaveBeenCalledWith(
+      apiClient, "project-1", "registry.p-test.project.space", "registry-service", "5000/tcp", expect.anything(),
+    );
+  });
+
+  it("keeps the credentials of an existing service when the record is missing", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.listRegistries.mockResolvedValueOnce({ status: 200, data: [] });
+
+    const result = await runSetup(apiClient);
+
+    expect(result.created).toBe(true);
+    expect(deployServiceAs).not.toHaveBeenCalled();
+    expect(apiClient.container.createRegistry).toHaveBeenCalledWith({
+      projectId: "project-1",
+      data: expect.objectContaining({
+        uri: "registry.p-test.project.space",
+        credentials: { username: "user", password: "password" },
+      }),
+    });
+  });
+
+  it("ignores unrelated registries configured in the project", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.listRegistries.mockResolvedValueOnce({
+      status: 200,
+      data: [{ id: "quay", uri: "quay.io" }, { id: "external", uri: "registry.example.com" }],
+    });
+
+    const result = await runSetup(apiClient);
+
+    expect(result.created).toBe(true);
+    expect(apiClient.container.updateRegistry).not.toHaveBeenCalled();
+    expect(apiClient.container.createRegistry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getProjectRegistry", () => {
+  it("matches the registry by URI, ignoring scheme and trailing slashes", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.listRegistries.mockResolvedValueOnce({
+      status: 200,
+      data: [{ id: "quay", uri: "quay.io" }, { id: "registry-1", uri: "https://Registry.p-test.project.space/" }],
+    });
+
+    const registry = await getProjectRegistry(apiClient as any, "project-1", "registry.p-test.project.space");
+
+    expect(registry?.id).toBe("registry-1");
+  });
+
+  it("falls back to the first non-default registry when no URI is given", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.listRegistries.mockResolvedValueOnce({
+      status: 200,
+      data: [{ id: "docker", uri: "docker.io" }, { id: "quay", uri: "quay.io" }],
+    });
+
+    const registry = await getProjectRegistry(apiClient as any, "project-1");
+
+    expect(registry?.id).toBe("quay");
   });
 });
