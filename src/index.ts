@@ -19,6 +19,7 @@ export type { ImageOptions } from "./entities/docker.js";
 // Entity operations
 export {
   getProjectRegistry,
+  getProjectRegistryUri,
   getRegistryService,
   createRegistry,
   updateRegistryCredentials,
@@ -32,7 +33,8 @@ export {
   createDomain,
   waitForDomainReachable,
   waitForIngressReady,
-  createAndWaitForDomain
+  createAndWaitForDomain,
+  findDefaultDomain
 } from "./entities/domain.js";
 
 // Type exports

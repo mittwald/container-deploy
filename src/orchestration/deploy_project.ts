@@ -9,7 +9,6 @@ import {
 
 import { checkRepository } from "../entities/repository.js";
 import { deployService } from "../entities/service.js";
-import { getProjectShortIdFromUuid } from "../entities/project.js";
 
 import type {
     DeployOptions,
@@ -24,15 +23,13 @@ export async function deployProject(opts: DeployOptions): Promise<DeployResult> 
     throw new Error("Provide stackId or both registryStackId and applicationStackId.");
   }
 
-  const projectShortId = await getProjectShortIdFromUuid(opts.apiClient, opts.projectId);
-
   checkRequiredTools();
 
   const registryData = await setupProjectRegistry(
     opts.apiClient,
     opts.projectId,
     registryStackId,
-    projectShortId,
+    undefined,
     opts.waitTimeout,
   );
 

@@ -11,26 +11,29 @@ jest.mock(
   { virtual: true }
 );
 
-jest.mock("../src/entities/project", () => ({
-  getProjectShortIdFromUuid: jest.fn(async () => "p-test"),
-}));
-
 jest.mock("../src/entities/service", () => ({
   deployServiceAs: jest.fn(async () => "registry-service"),
 }));
 
 jest.mock("../src/entities/domain", () => ({
   createAndWaitForDomain: jest.fn(async () => ({ id: "ingress-1" })),
+  findDefaultDomain: jest.fn(),
   findDomainByHostname: jest.fn(),
   waitForDomainReachability: jest.fn(async () => true),
 }));
 
 import { checkProjectRegistry, getProjectRegistry } from "../src/entities/registry";
-import { getProjectShortIdFromUuid } from "../src/entities/project";
 import { deployServiceAs } from "../src/entities/service";
-import { createAndWaitForDomain, findDomainByHostname, waitForDomainReachability } from "../src/entities/domain";
+import {
+  createAndWaitForDomain,
+  findDefaultDomain,
+  findDomainByHostname,
+  waitForDomainReachability,
+} from "../src/entities/domain";
 import { setupProjectRegistry } from "../src/orchestration/registry_setup";
 import { Duration } from "../src/utils/helpers";
+
+const defaultIngress = { id: "default-ingress", hostname: "p-test.project.space", isDefault: true };
 
 const registryIngress = {
   id: "ingress-1",
@@ -78,6 +81,7 @@ async function runSetup(apiClient: any, timeout = Duration.fromSeconds(30)) {
 describe("registry stack targeting", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (findDefaultDomain as jest.Mock).mockResolvedValue(defaultIngress);
     (findDomainByHostname as jest.Mock).mockResolvedValue(registryIngress);
   });
 
@@ -152,6 +156,7 @@ describe("registry stack targeting", () => {
 describe("registry reconciliation", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (findDefaultDomain as jest.Mock).mockResolvedValue(defaultIngress);
     (findDomainByHostname as jest.Mock).mockResolvedValue(registryIngress);
   });
 
@@ -245,9 +250,33 @@ describe("registry reconciliation", () => {
     expect(apiClient.container.updateRegistry).not.toHaveBeenCalled();
     expect(apiClient.container.createRegistry).toHaveBeenCalledTimes(1);
   });
+
+  it("derives the registry hostname from the project's default domain", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.listRegistries.mockResolvedValueOnce({ status: 200, data: [] });
+    (findDefaultDomain as jest.Mock).mockResolvedValueOnce({ ...defaultIngress, hostname: "p-test.example.net" });
+    (findDomainByHostname as jest.Mock).mockResolvedValueOnce(null);
+
+    const result = await runSetup(apiClient);
+
+    expect(result.uri).toBe("registry.p-test.example.net");
+    expect(findDefaultDomain).toHaveBeenCalledWith(apiClient, "project-1");
+    expect(createAndWaitForDomain).toHaveBeenCalledWith(
+      apiClient, "project-1", "registry.p-test.example.net", "registry-service", "5000/tcp", expect.anything(),
+    );
+    expect(apiClient.container.createRegistry).toHaveBeenCalledWith({
+      projectId: "project-1",
+      data: expect.objectContaining({ uri: "registry.p-test.example.net" }),
+    });
+  });
 });
 
 describe("getProjectRegistry", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (findDefaultDomain as jest.Mock).mockResolvedValue(defaultIngress);
+  });
+
   it("identifies the project registry by its URI", async () => {
     const { apiClient } = makeApiClient();
     apiClient.container.listRegistries.mockResolvedValueOnce({
@@ -262,7 +291,7 @@ describe("getProjectRegistry", () => {
     const registry = await getProjectRegistry(apiClient as any, "project-1");
 
     expect(registry?.id).toBe("registry-1");
-    expect(getProjectShortIdFromUuid).toHaveBeenCalledWith(apiClient, "project-1");
+    expect(findDefaultDomain).toHaveBeenCalledWith(apiClient, "project-1");
   });
 
   it("returns undefined when only unrelated registries exist", async () => {
@@ -275,5 +304,29 @@ describe("getProjectRegistry", () => {
     const registry = await getProjectRegistry(apiClient as any, "project-1");
 
     expect(registry).toBeUndefined();
+  });
+});
+
+describe("findDefaultDomain", () => {
+  const { findDefaultDomain: realFindDefaultDomain } = jest.requireActual("../src/entities/domain");
+
+  it("returns the ingress marked as default", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.axios.get.mockResolvedValueOnce({
+      status: 200,
+      data: [registryIngress, defaultIngress],
+    });
+
+    const domain = await realFindDefaultDomain(apiClient, "project-1");
+
+    expect(domain.hostname).toBe("p-test.project.space");
+    expect(apiClient.axios.get).toHaveBeenCalledWith("/v2/projects/project-1/ingresses");
+  });
+
+  it("throws when the project has no default ingress", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.axios.get.mockResolvedValueOnce({ status: 200, data: [registryIngress] });
+
+    await expect(realFindDefaultDomain(apiClient, "project-1")).rejects.toThrow("has no default domain");
   });
 });

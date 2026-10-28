@@ -13,7 +13,7 @@ import {
 import type {
     RegistryData,
 } from "../types/index.js";
-import { getProjectShortIdFromUuid } from "./project.js";
+import { findDefaultDomain } from "./domain.js";
 
 // type shorthands
 type Registry = MittwaldAPIV2.Components.Schemas.ContainerRegistry;
@@ -23,16 +23,46 @@ export const MW_REGISTRY_SERVICE_NAME = "project-registry";
 export const MW_REGISTRY_PORT_PROTOCOL = "5000/tcp";
 
 /**
- * Returns the URI of the project registry for a given project short ID.
+ * Returns the URI of the project registry, which is the `registry`
+ * subdomain of the project's default domain.
+ *
+ * @param apiClient The Mittwald API client instance
+ * @param projectId The project ID
+ * @returns The registry URI, e.g. `registry.<projectShortId>.project.space`
  */
-export function projectRegistryUri(projectShortId: string): string {
-    return `registry.${projectShortId}.project.space`;
+export async function getProjectRegistryUri(
+    apiClient: MittwaldAPIV2Client,
+    projectId: string,
+): Promise<string> {
+    const defaultDomain = await findDefaultDomain(apiClient, projectId);
+    return `registry.${defaultDomain.hostname}`;
 }
 
 /**
- * Fetches the project registry, identified by its URI
- * `registry.<projectShortId>.project.space`. Other registries configured
- * in the project are ignored.
+ * Fetches the registry with the given URI from a project.
+ *
+ * @param apiClient The Mittwald API client instance
+ * @param projectId The project ID to fetch registry for
+ * @param uri The URI of the registry
+ * @returns The registry object, or undefined if no registry has that URI
+ */
+export async function findRegistryByUri(
+    apiClient: MittwaldAPIV2Client,
+    projectId: string,
+    uri: string,
+): Promise<Registry | undefined> {
+    const registriesResp = await apiClient.container.listRegistries({
+        projectId,
+    });
+    assertStatus(registriesResp, 200);
+
+    return registriesResp.data.find(r => r.uri === uri);
+}
+
+/**
+ * Fetches the project registry, identified by its URI (see
+ * `getProjectRegistryUri`). Other registries configured in the project
+ * are ignored.
  *
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID to fetch registry for
@@ -42,15 +72,8 @@ export async function getProjectRegistry(
     apiClient: MittwaldAPIV2Client,
     projectId: string,
 ): Promise<Registry | undefined> {
-    const projectShortId = await getProjectShortIdFromUuid(apiClient, projectId);
-    const uri = projectRegistryUri(projectShortId);
-
-    const registriesResp = await apiClient.container.listRegistries({
-        projectId,
-    });
-    assertStatus(registriesResp, 200);
-
-    return registriesResp.data.find(r => r.uri === uri);
+    const uri = await getProjectRegistryUri(apiClient, projectId);
+    return findRegistryByUri(apiClient, projectId, uri);
 }
 
 /**

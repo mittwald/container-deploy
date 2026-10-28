@@ -15,9 +15,9 @@ import {
 } from "../utils/helpers.js";
 
 import {
-    getProjectRegistry,
+    findRegistryByUri,
+    getProjectRegistryUri,
     getRegistryService,
-    projectRegistryUri,
     createRegistry,
     updateRegistryCredentials,
     MW_REGISTRY_SERVICE_NAME,
@@ -72,7 +72,8 @@ function routesToRegistryService(ingress: DomainData, serviceId: string): boolea
  *
  * 1. a `project-registry` service is running in the given stack (existing
  *    credentials from its environment are kept),
- * 2. an ingress at `registry.<projectShortId>.project.space` routes to it,
+ * 2. an ingress at the `registry` subdomain of the project's default domain
+ *    (e.g. `registry.<projectShortId>.project.space`) routes to it,
  * 3. the project has a registry record for that URI, with the credentials
  *    from the service's environment.
  *
@@ -86,7 +87,8 @@ function routesToRegistryService(ingress: DomainData, serviceId: string): boolea
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID where the registry should be created
  * @param stackId The ID of the existing stack hosting the registry service
- * @param projectShortId The short ID of the project (for domain subdomain)
+ * @param _projectShortId Unused; the registry hostname is derived from the
+ *     project's default domain. Kept for backwards compatibility.
  * @param timeout Maximum time to wait for service/domain availability
  * @returns Registry information including credentials and service ID;
  *     `created` is true if the registry record was created in this run
@@ -95,13 +97,13 @@ export async function setupProjectRegistry(
     apiClient: MittwaldAPIV2Client,
     projectId: string,
     stackId: string,
-    projectShortId: string,
+    _projectShortId: string | undefined,
     timeout: Duration,
 ): Promise<RegistryData> {
-    const uri = projectRegistryUri(projectShortId);
+    const uri = await getProjectRegistryUri(apiClient, projectId);
 
     // Step 1: Determine the current state
-    const registry = await getProjectRegistry(apiClient, projectId);
+    const registry = await findRegistryByUri(apiClient, projectId, uri);
     const existingService = await getRegistryService(apiClient, stackId);
 
     // Step 2: Deploy the registry service, unless it already exists with
