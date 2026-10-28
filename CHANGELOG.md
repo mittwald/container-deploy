@@ -1,3 +1,9 @@
+## [2.0.1](https://github.com/mittwald/container-deploy/compare/v2.0.0...v2.0.1) (2026-10-28)
+
+### Bug Fixes
+
+* **registry:** recover from partially set up project registries ([#26](https://github.com/mittwald/container-deploy/issues/26)) ([3eb87d2](https://github.com/mittwald/container-deploy/commit/3eb87d24ac246ff517dbd5b6d05249c66d67570c))
+
 ## [2.0.0](https://github.com/mittwald/container-deploy/compare/v1.7.1...v2.0.0) (2026-10-27)
 
 ### ⚠ BREAKING CHANGES
