@@ -11,6 +11,10 @@ jest.mock(
   { virtual: true }
 );
 
+jest.mock("../src/entities/project", () => ({
+  getProjectShortIdFromUuid: jest.fn(async () => "p-test"),
+}));
+
 jest.mock("../src/entities/service", () => ({
   deployServiceAs: jest.fn(async () => "registry-service"),
 }));
@@ -22,6 +26,7 @@ jest.mock("../src/entities/domain", () => ({
 }));
 
 import { checkProjectRegistry, getProjectRegistry } from "../src/entities/registry";
+import { getProjectShortIdFromUuid } from "../src/entities/project";
 import { deployServiceAs } from "../src/entities/service";
 import { createAndWaitForDomain, findDomainByHostname, waitForDomainReachability } from "../src/entities/domain";
 import { setupProjectRegistry } from "../src/orchestration/registry_setup";
@@ -243,19 +248,24 @@ describe("registry reconciliation", () => {
 });
 
 describe("getProjectRegistry", () => {
-  it("matches the registry by URI, ignoring scheme and trailing slashes", async () => {
+  it("identifies the project registry by its URI", async () => {
     const { apiClient } = makeApiClient();
     apiClient.container.listRegistries.mockResolvedValueOnce({
       status: 200,
-      data: [{ id: "quay", uri: "quay.io" }, { id: "registry-1", uri: "https://Registry.p-test.project.space/" }],
+      data: [
+        { id: "quay", uri: "quay.io" },
+        { id: "other-project", uri: "registry.p-other.project.space" },
+        { id: "registry-1", uri: "registry.p-test.project.space" },
+      ],
     });
 
-    const registry = await getProjectRegistry(apiClient as any, "project-1", "registry.p-test.project.space");
+    const registry = await getProjectRegistry(apiClient as any, "project-1");
 
     expect(registry?.id).toBe("registry-1");
+    expect(getProjectShortIdFromUuid).toHaveBeenCalledWith(apiClient, "project-1");
   });
 
-  it("falls back to the first non-default registry when no URI is given", async () => {
+  it("returns undefined when only unrelated registries exist", async () => {
     const { apiClient } = makeApiClient();
     apiClient.container.listRegistries.mockResolvedValueOnce({
       status: 200,
@@ -264,6 +274,6 @@ describe("getProjectRegistry", () => {
 
     const registry = await getProjectRegistry(apiClient as any, "project-1");
 
-    expect(registry?.id).toBe("quay");
+    expect(registry).toBeUndefined();
   });
 });

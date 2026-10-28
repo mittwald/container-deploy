@@ -13,6 +13,7 @@ import {
 import type {
     RegistryData,
 } from "../types/index.js";
+import { getProjectShortIdFromUuid } from "./project.js";
 
 // type shorthands
 type Registry = MittwaldAPIV2.Components.Schemas.ContainerRegistry;
@@ -22,66 +23,34 @@ export const MW_REGISTRY_SERVICE_NAME = "project-registry";
 export const MW_REGISTRY_PORT_PROTOCOL = "5000/tcp";
 
 /**
- * Normalizes a registry URI for comparison by stripping the scheme and
- * trailing slashes.
+ * Returns the URI of the project registry for a given project short ID.
  */
-function normalizeRegistryUri(uri: string): string {
-    return uri
-        .trim()
-        .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
-        .replace(/\/+$/, "")
-        .toLowerCase();
+export function projectRegistryUri(projectShortId: string): string {
+    return `registry.${projectShortId}.project.space`;
 }
 
 /**
- * Fetches the existing (non-default) registry for a project.
- *
- * When `uri` is given, only a registry with that URI (ignoring scheme and
- * trailing slashes) is returned. Without it, the first registry that is not
- * hosted on docker.io, ghcr.io or gitlab.com is returned; this heuristic
- * cannot tell the project registry apart from other external registries.
+ * Fetches the project registry, identified by its URI
+ * `registry.<projectShortId>.project.space`. Other registries configured
+ * in the project are ignored.
  *
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID to fetch registry for
- * @param uri Optional URI of the registry to look for
- * @returns The registry object, or undefined if no matching registry exists
+ * @returns The registry object, or undefined if no project registry exists
  */
 export async function getProjectRegistry(
     apiClient: MittwaldAPIV2Client,
     projectId: string,
-    uri?: string,
-) {
-    /*
-        Fetch the registry information for the project using the
-        API client. Default registries are identified by URI
-    */
+): Promise<Registry | undefined> {
+    const projectShortId = await getProjectShortIdFromUuid(apiClient, projectId);
+    const uri = projectRegistryUri(projectShortId);
 
     const registriesResp = await apiClient.container.listRegistries({
         projectId,
     });
     assertStatus(registriesResp, 200);
 
-    if (uri !== undefined) {
-        const expected = normalizeRegistryUri(uri);
-        return registriesResp.data.find(
-            r => normalizeRegistryUri(r.uri || "") === expected
-        );
-    }
-
-    const isDefaultRegistry = (r: Registry): boolean => {
-        const uri = r.uri || "";
-        return (
-            uri.includes("docker.io") ||
-            uri.includes("ghcr.io") ||
-            uri.includes("gitlab.com")
-        );
-    };
-
-    const registry = registriesResp.data.find(
-        r => !isDefaultRegistry(r)
-    );
-
-    return registry;
+    return registriesResp.data.find(r => r.uri === uri);
 }
 
 /**

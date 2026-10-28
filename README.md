@@ -76,7 +76,7 @@ Pure API wrappers with no orchestration logic. Each handles a single domain:
 #### `entities/registry.ts` – Container Registry API
 - **Responsibility**: Container registry operations via Mittwald API
 - **Key Functions**:
-  - `getProjectRegistry(apiClient, projectId, uri?)` – Fetch existing registry for a project, matched by URI if given
+  - `getProjectRegistry()` – Fetch the project registry (`registry.<projectShortId>.project.space`) for a project
   - `createRegistry()` – Create new registry service  
   - `updateRegistryCredentials(apiClient, registryId, credentials)` – Set the credentials of an existing registry
   - `getRegistryService(apiClient, stackId)` – Find the registry service in a stack and read its credentials

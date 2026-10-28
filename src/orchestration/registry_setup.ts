@@ -17,6 +17,7 @@ import {
 import {
     getProjectRegistry,
     getRegistryService,
+    projectRegistryUri,
     createRegistry,
     updateRegistryCredentials,
     MW_REGISTRY_SERVICE_NAME,
@@ -97,10 +98,10 @@ export async function setupProjectRegistry(
     projectShortId: string,
     timeout: Duration,
 ): Promise<RegistryData> {
-    const uri = `registry.${projectShortId}.project.space`;
+    const uri = projectRegistryUri(projectShortId);
 
     // Step 1: Determine the current state
-    const registry = await getProjectRegistry(apiClient, projectId, uri);
+    const registry = await getProjectRegistry(apiClient, projectId);
     const existingService = await getRegistryService(apiClient, stackId);
 
     // Step 2: Deploy the registry service, unless it already exists with
