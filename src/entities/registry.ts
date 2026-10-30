@@ -123,23 +123,28 @@ export async function updateRegistryCredentials(
 
 /**
  * Checks whether an error thrown by `createRegistry` or
- * `updateRegistryCredentials` means that the API could not reach a registry
- * at the registry URI (`400 ValidationError: registry uri '...' does not host
- * a registry`). This happens while a new or re-targeted ingress has not yet
+ * `updateRegistryCredentials` is a validation error of the registry URI, e.g.
+ * `registry uri '...' is not reachable` or `registry uri '...' does not host
+ * a registry`. This happens while a new or re-targeted ingress has not yet
  * propagated, and usually resolves after some time.
  *
  * @param error The error thrown by the API call (an `ApiClientError` from
  *     `assertStatus`, which carries the API response)
- * @returns true if the error is the "does not host a registry" validation error
+ * @returns true if the API rejected the request with a validation error for
+ *     the `uri` field
  */
 export function isRegistryUriNotReachableError(error: unknown): boolean {
-    const response = (error as { response?: { status?: number; data?: any } } | null)?.response;
+    const response = (error as { response?: { status?: number; data?: unknown } } | null)?.response;
     if (response?.status !== 400) {
         return false;
     }
 
-    const message = response.data?.message;
-    return typeof message === "string" && message.includes("does not host a registry");
+    const data = response.data as Partial<MittwaldAPIV2.Components.Schemas.CommonsValidationErrors> | undefined;
+    if (data?.type !== "ValidationError" || !Array.isArray(data.validationErrors)) {
+        return false;
+    }
+
+    return data.validationErrors.some(validationError => validationError.path === "uri");
 }
 
 /**

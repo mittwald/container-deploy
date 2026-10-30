@@ -72,13 +72,26 @@ function makeApiClient() {
   return { apiClient, registry };
 }
 
-const registryNotReachableResponse = {
-  status: 400,
-  data: {
-    type: "ValidationError",
-    message: "3 INVALID_ARGUMENT: registry uri 'registry.p-test.project.space' does not host a registry",
-  },
-} as any;
+function uriValidationErrorResponse(type: string, message: string) {
+  return {
+    status: 400,
+    data: {
+      type: "ValidationError",
+      message: `3 INVALID_ARGUMENT: ${message}`,
+      validationErrors: [{ type, message, path: "uri", context: {} }],
+    },
+  } as any;
+}
+
+const registryNotHostedResponse = uriValidationErrorResponse(
+  "noRegistry",
+  "registry uri 'registry.p-test.project.space' does not host a registry",
+);
+
+const registryUnreachableResponse = uriValidationErrorResponse(
+  "unreachable",
+  "registry uri 'registry.p-test.project.space' is not reachable",
+);
 
 async function runSetup(apiClient: any, timeout = Duration.fromSeconds(30)) {
   jest.useFakeTimers();
@@ -301,8 +314,8 @@ describe("registry URI propagation", () => {
     apiClient.container.getStack.mockResolvedValueOnce({ status: 200, data: { services: [] } });
     (findDomainByHostname as jest.Mock).mockResolvedValueOnce(retargetedIngress);
     apiClient.container.updateRegistry
-      .mockResolvedValueOnce(registryNotReachableResponse)
-      .mockResolvedValueOnce(registryNotReachableResponse);
+      .mockResolvedValueOnce(registryNotHostedResponse)
+      .mockResolvedValueOnce(registryNotHostedResponse);
 
     const result = await runSetup(apiClient);
 
@@ -314,7 +327,7 @@ describe("registry URI propagation", () => {
     const { apiClient, registry } = makeApiClient();
     apiClient.container.listRegistries.mockResolvedValueOnce({ status: 200, data: [] });
     (findDomainByHostname as jest.Mock).mockResolvedValueOnce(null);
-    apiClient.container.createRegistry.mockResolvedValueOnce(registryNotReachableResponse);
+    apiClient.container.createRegistry.mockResolvedValueOnce(registryUnreachableResponse);
 
     const result = await runSetup(apiClient);
 
@@ -337,7 +350,7 @@ describe("registry URI propagation", () => {
 
   it("gives up when the API cannot reach the registry within the timeout", async () => {
     const { apiClient } = makeApiClient();
-    apiClient.container.updateRegistry.mockResolvedValue(registryNotReachableResponse);
+    apiClient.container.updateRegistry.mockResolvedValue(registryUnreachableResponse);
     jest.useFakeTimers();
 
     const resultPromise = setupProjectRegistry(apiClient as any, "project-1", "stack-1", "p-test", Duration.fromSeconds(30));
@@ -349,16 +362,30 @@ describe("registry URI propagation", () => {
     expect(apiClient.container.updateRegistry).toHaveBeenCalledTimes(4);
   });
 
-  it("does not retry on other API errors", async () => {
-    const { apiClient } = makeApiClient();
-    apiClient.container.updateRegistry.mockResolvedValue({
+  it.each([
+    ["a validation error of another field", {
       status: 400,
-      data: { type: "ValidationError", message: "invalid credentials" },
-    } as any);
+      data: {
+        type: "ValidationError",
+        message: "3 INVALID_ARGUMENT: invalid credentials",
+        validationErrors: [{ type: "invalid", message: "invalid credentials", path: "credentials", context: {} }],
+      },
+    }],
+    ["a validation error without details", {
+      status: 400,
+      data: { type: "ValidationError", message: "registry uri 'registry.p-test.project.space' is not reachable" },
+    }],
+    ["a non-validation error", {
+      status: 403,
+      data: { type: "PermissionDenied", message: "permission denied" },
+    }],
+  ])("does not retry on %s", async (_name, response) => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.updateRegistry.mockResolvedValue(response as any);
     jest.useFakeTimers();
 
     const resultPromise = setupProjectRegistry(apiClient as any, "project-1", "stack-1", "p-test", Duration.fromSeconds(30));
-    const assertion = expect(resultPromise).rejects.toThrow("Expected status 204, got 400");
+    const assertion = expect(resultPromise).rejects.toThrow(`Expected status 204, got ${response.status}`);
     await jest.advanceTimersByTimeAsync(120000);
     await assertion;
 

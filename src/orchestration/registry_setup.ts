@@ -113,9 +113,9 @@ async function retryWhileRegistryUriNotReachable<T>(
  *
  * After a new or re-targeted ingress, it can take a while until the API can
  * reach the registry at its URI (DNS propagation, TLS certificate issuance).
- * Until then, the API rejects the registry record with "does not host a
- * registry"; this step is retried until the API accepts it or the timeout
- * is exhausted.
+ * Until then, the API rejects the registry record with a validation error for
+ * its URI ("is not reachable", "does not host a registry"); this step is
+ * retried until the API accepts it or the timeout is exhausted.
  *
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID where the registry should be created
