@@ -20,6 +20,37 @@ import {
 } from "../types/index.js";
 
 
+const DEFAULT_CONTAINER_PORT = "80";
+
+/**
+ * Returns the container port of a port mapping, e.g. "3000" for
+ * "8080:3000/tcp", "3000/tcp" or "127.0.0.1:8080:3000".
+ * Returns undefined if the mapping cannot be parsed.
+ */
+export function containerPortOf(portMapping: string): string | undefined {
+    const withoutProtocol = portMapping.trim().split("/")[0];
+    const containerPort = withoutProtocol.split(":").pop() ?? "";
+    if (!/^\d+$/.test(containerPort)) {
+        return undefined;
+    }
+
+    const port = parseInt(containerPort, 10);
+    if (port < 1 || port > 65535) {
+        return undefined;
+    }
+
+    return String(port);
+}
+
+/**
+ * Returns the default value for the PORT environment variable: the container
+ * port of the primary (first) port mapping, or "80" if there is none.
+ */
+export function defaultPortEnv(ports?: string[]): string {
+    const primary = ports?.[0];
+    return (primary && containerPortOf(primary)) || DEFAULT_CONTAINER_PORT;
+}
+
 export async function deployService(apiClient: MittwaldAPIV2Client,
                                     projectId: string,
                                     stackId: string,
@@ -53,7 +84,7 @@ export async function deployService(apiClient: MittwaldAPIV2Client,
         description: "Deployed application",
         ports: repositoryData.ports,
         environment: {
-            PORT: "80",
+            PORT: defaultPortEnv(repositoryData.ports),
             ...environment,
         },
         volumes: volumeEntries.map(([name, mountPath]) => `${name}:${mountPath}`),
