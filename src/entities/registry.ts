@@ -122,6 +122,27 @@ export async function updateRegistryCredentials(
 }
 
 /**
+ * Checks whether an error thrown by `createRegistry` or
+ * `updateRegistryCredentials` means that the API could not reach a registry
+ * at the registry URI (`400 ValidationError: registry uri '...' does not host
+ * a registry`). This happens while a new or re-targeted ingress has not yet
+ * propagated, and usually resolves after some time.
+ *
+ * @param error The error thrown by the API call (an `ApiClientError` from
+ *     `assertStatus`, which carries the API response)
+ * @returns true if the error is the "does not host a registry" validation error
+ */
+export function isRegistryUriNotReachableError(error: unknown): boolean {
+    const response = (error as { response?: { status?: number; data?: any } } | null)?.response;
+    if (response?.status !== 400) {
+        return false;
+    }
+
+    const message = response.data?.message;
+    return typeof message === "string" && message.includes("does not host a registry");
+}
+
+/**
  * Looks up the registry service in a stack and reads its credentials
  * from the deployed environment.
  *

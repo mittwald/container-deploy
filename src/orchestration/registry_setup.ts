@@ -20,6 +20,7 @@ import {
     getRegistryService,
     createRegistry,
     updateRegistryCredentials,
+    isRegistryUriNotReachableError,
     MW_REGISTRY_SERVICE_NAME,
     MW_REGISTRY_PORT_PROTOCOL,
 } from "../entities/registry.js";
@@ -41,6 +42,10 @@ const MW_REGISTRY_PORTS = ["5000:5000/tcp"];
 const MW_REGISTRY_VOLUMES = [
     { name: "project-registry-data", mountPath: "/var/lib/registry" },
 ];
+
+// Interval between attempts to register the registry in the API while the
+// API cannot reach it at its URI yet.
+const REGISTRY_URI_RETRY_INTERVAL = Duration.fromSeconds(10);
 
 /**
  * Helper: Generate a unique username for registry credentials.
@@ -65,6 +70,33 @@ function routesToRegistryService(ingress: DomainData, serviceId: string): boolea
 }
 
 /**
+ * Helper: Run a registry API operation, and retry it while the API reports
+ * that it cannot reach a registry at the registry URI. The API validates the
+ * URI from its own side, so this covers DNS propagation and TLS certificate
+ * issuance for new ingresses as well as propagation of re-targeted ones.
+ * Other errors are thrown immediately; after the timeout, the last API error
+ * is thrown.
+ */
+async function retryWhileRegistryUriNotReachable<T>(
+    operation: () => Promise<T>,
+    timeout: Duration,
+): Promise<T> {
+    let waited = Duration.fromZero();
+    while (true) {
+        try {
+            return await operation();
+        } catch (error) {
+            if (!isRegistryUriNotReachableError(error) || waited.compare(timeout) >= 0) {
+                throw error;
+            }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, REGISTRY_URI_RETRY_INTERVAL.milliseconds));
+        waited = waited.add(REGISTRY_URI_RETRY_INTERVAL);
+    }
+}
+
+/**
  * Orchestrates the complete setup of a project registry.
  *
  * Reconciles each part of the registry with the desired state, so that it
@@ -79,17 +111,19 @@ function routesToRegistryService(ingress: DomainData, serviceId: string): boolea
  *
  * Other registries configured in the project are left alone.
  *
- * WARNING: The ingress setup is known to be flaky. When a new ingress is
- * created, this step includes a 2-minute wait to allow DNS propagation and
- * TLS certificate creation.
- * See: https://docs.mittwald.de/ for known issues.
+ * After a new or re-targeted ingress, it can take a while until the API can
+ * reach the registry at its URI (DNS propagation, TLS certificate issuance).
+ * Until then, the API rejects the registry record with "does not host a
+ * registry"; this step is retried until the API accepts it or the timeout
+ * is exhausted.
  *
  * @param apiClient The Mittwald API client instance
  * @param projectId The project ID where the registry should be created
  * @param stackId The ID of the existing stack hosting the registry service
  * @param _projectShortId Unused; the registry hostname is derived from the
  *     project's default domain. Kept for backwards compatibility.
- * @param timeout Maximum time to wait for service/domain availability
+ * @param timeout Maximum time to wait for service/domain availability, and
+ *     for the API to accept the registry URI
  * @returns Registry information including credentials and service ID;
  *     `created` is true if the registry record was created in this run
  */
@@ -144,10 +178,9 @@ export async function setupProjectRegistry(
     const existingIngress = await findDomainByHostname(apiClient, projectId, uri);
     const ingressConfigured =
         existingIngress !== null && routesToRegistryService(existingIngress, registryServiceId);
-    let ingressCreated = false;
 
     if (!ingressConfigured) {
-        const domainResult = await createAndWaitForDomain(
+        await createAndWaitForDomain(
             apiClient,
             projectId,
             uri,
@@ -155,7 +188,6 @@ export async function setupProjectRegistry(
             MW_REGISTRY_PORT_PROTOCOL,
             timeout,
         );
-        ingressCreated = !domainResult.wasReused;
     }
 
     if (serviceDeployed || !ingressConfigured) {
@@ -166,27 +198,29 @@ export async function setupProjectRegistry(
         await waitForDomainReachability(uri, timeout);
     }
 
-    if (ingressCreated) {
-        // Step 4.1: Additional wait to allow DNS propagation and TLS certificate issuance
-        // WE reaching registry does not mean other machines can reach it immediately due to
-        // DNS caching and whatever. This wait is a pragmatic solution to mitigate these issues.
-        await new Promise(resolve => setTimeout(resolve, 2 * 60 * 1000));
-    }
-
     // Step 5: Register the registry in Mittwald API, or update its credentials.
     // The API does not return stored passwords, so credentials are always set
     // to make sure they match the service.
+    // Us reaching the registry (step 4) does not mean that the API can reach it,
+    // due to DNS caching and propagation of new or re-targeted ingresses. The API
+    // validates the registry URI itself, so retry while it cannot reach it yet.
     const credentials = { username, password };
     let registryRecord = registry;
 
     if (registry) {
-        await updateRegistryCredentials(apiClient, registry.id, credentials);
+        await retryWhileRegistryUriNotReachable(
+            () => updateRegistryCredentials(apiClient, registry.id, credentials),
+            timeout,
+        );
     } else {
-        registryRecord = await createRegistry(apiClient, projectId, {
-            uri,
-            description: `Default registry for project ${projectId}`,
-            credentials,
-        });
+        registryRecord = await retryWhileRegistryUriNotReachable(
+            () => createRegistry(apiClient, projectId, {
+                uri,
+                description: `Default registry for project ${projectId}`,
+                credentials,
+            }),
+            timeout,
+        );
     }
 
     return {
