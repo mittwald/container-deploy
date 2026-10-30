@@ -2,9 +2,10 @@ jest.mock(
   "@mittwald/api-client",
   () => ({
     MittwaldAPIV2Client: class {},
+    // Like the real assertStatus, the thrown error carries the response
     assertStatus: (resp: { status: number }, expected: number) => {
       if (resp.status !== expected) {
-        throw new Error(`Expected status ${expected}, got ${resp.status}`);
+        throw Object.assign(new Error(`Expected status ${expected}, got ${resp.status}`), { response: resp });
       }
     },
   }),
@@ -70,6 +71,27 @@ function makeApiClient() {
   };
   return { apiClient, registry };
 }
+
+function uriValidationErrorResponse(type: string, message: string) {
+  return {
+    status: 400,
+    data: {
+      type: "ValidationError",
+      message: `3 INVALID_ARGUMENT: ${message}`,
+      validationErrors: [{ type, message, path: "uri", context: {} }],
+    },
+  } as any;
+}
+
+const registryNotHostedResponse = uriValidationErrorResponse(
+  "noRegistry",
+  "registry uri 'registry.p-test.project.space' does not host a registry",
+);
+
+const registryUnreachableResponse = uriValidationErrorResponse(
+  "unreachable",
+  "registry uri 'registry.p-test.project.space' is not reachable",
+);
 
 async function runSetup(apiClient: any, timeout = Duration.fromSeconds(30)) {
   jest.useFakeTimers();
@@ -268,6 +290,106 @@ describe("registry reconciliation", () => {
       projectId: "project-1",
       data: expect.objectContaining({ uri: "registry.p-test.example.net" }),
     });
+  });
+});
+
+describe("registry URI propagation", () => {
+  const retargetedIngress = {
+    ...registryIngress,
+    paths: [{ path: "/", target: { container: { id: "deleted-service", portProtocol: "5000/tcp" } } }],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (findDefaultDomain as jest.Mock).mockResolvedValue(defaultIngress);
+    (findDomainByHostname as jest.Mock).mockResolvedValue(registryIngress);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("retries the credential update until the API can reach a re-targeted registry", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.getStack.mockResolvedValueOnce({ status: 200, data: { services: [] } });
+    (findDomainByHostname as jest.Mock).mockResolvedValueOnce(retargetedIngress);
+    apiClient.container.updateRegistry
+      .mockResolvedValueOnce(registryNotHostedResponse)
+      .mockResolvedValueOnce(registryNotHostedResponse);
+
+    const result = await runSetup(apiClient);
+
+    expect(result.created).toBe(false);
+    expect(apiClient.container.updateRegistry).toHaveBeenCalledTimes(3);
+  });
+
+  it("retries the record creation until the API can reach a new registry", async () => {
+    const { apiClient, registry } = makeApiClient();
+    apiClient.container.listRegistries.mockResolvedValueOnce({ status: 200, data: [] });
+    (findDomainByHostname as jest.Mock).mockResolvedValueOnce(null);
+    apiClient.container.createRegistry.mockResolvedValueOnce(registryUnreachableResponse);
+
+    const result = await runSetup(apiClient);
+
+    expect(result).toMatchObject({ created: true, registry });
+    expect(apiClient.container.createRegistry).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not wait a fixed time after creating a new ingress", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.listRegistries.mockResolvedValueOnce({ status: 200, data: [] });
+    (findDomainByHostname as jest.Mock).mockResolvedValueOnce(null);
+    jest.useFakeTimers();
+
+    // Resolves without advancing the fake timers
+    const result = await setupProjectRegistry(apiClient as any, "project-1", "stack-1", "p-test", Duration.fromSeconds(30));
+
+    expect(result.created).toBe(true);
+    expect(createAndWaitForDomain).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up when the API cannot reach the registry within the timeout", async () => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.updateRegistry.mockResolvedValue(registryUnreachableResponse);
+    jest.useFakeTimers();
+
+    const resultPromise = setupProjectRegistry(apiClient as any, "project-1", "stack-1", "p-test", Duration.fromSeconds(30));
+    const assertion = expect(resultPromise).rejects.toThrow("Expected status 204, got 400");
+    await jest.advanceTimersByTimeAsync(120000);
+    await assertion;
+
+    // attempts after 0s, 10s, 20s and 30s
+    expect(apiClient.container.updateRegistry).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    ["a validation error of another field", {
+      status: 400,
+      data: {
+        type: "ValidationError",
+        message: "3 INVALID_ARGUMENT: invalid credentials",
+        validationErrors: [{ type: "invalid", message: "invalid credentials", path: "credentials", context: {} }],
+      },
+    }],
+    ["a validation error without details", {
+      status: 400,
+      data: { type: "ValidationError", message: "registry uri 'registry.p-test.project.space' is not reachable" },
+    }],
+    ["a non-validation error", {
+      status: 403,
+      data: { type: "PermissionDenied", message: "permission denied" },
+    }],
+  ])("does not retry on %s", async (_name, response) => {
+    const { apiClient } = makeApiClient();
+    apiClient.container.updateRegistry.mockResolvedValue(response as any);
+    jest.useFakeTimers();
+
+    const resultPromise = setupProjectRegistry(apiClient as any, "project-1", "stack-1", "p-test", Duration.fromSeconds(30));
+    const assertion = expect(resultPromise).rejects.toThrow(`Expected status 204, got ${response.status}`);
+    await jest.advanceTimersByTimeAsync(120000);
+    await assertion;
+
+    expect(apiClient.container.updateRegistry).toHaveBeenCalledTimes(1);
   });
 });
 
