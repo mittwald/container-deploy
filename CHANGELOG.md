@@ -1,3 +1,10 @@
+## [2.0.2](https://github.com/mittwald/container-deploy/compare/v2.0.1...v2.0.2) (2026-11-02)
+
+### Bug Fixes
+
+* **registry:** retry registry record updates until the API accepts the registry URI ([#30](https://github.com/mittwald/container-deploy/issues/30)) ([045c066](https://github.com/mittwald/container-deploy/commit/045c06655f94a2cd1cd6c2b13dcbe93f73763bcd)), closes [#27](https://github.com/mittwald/container-deploy/issues/27)
+* **service:** derive default PORT from the primary container port ([#29](https://github.com/mittwald/container-deploy/issues/29)) ([69e45ae](https://github.com/mittwald/container-deploy/commit/69e45aece43cc925cbbbeb8c0bfad7d87c7dc9a5))
+
 ## [2.0.1](https://github.com/mittwald/container-deploy/compare/v2.0.0...v2.0.1) (2026-10-28)
 
 ### Bug Fixes
