@@ -123,15 +123,15 @@ export async function updateRegistryCredentials(
 
 /**
  * Checks whether an error thrown by `createRegistry` or
- * `updateRegistryCredentials` is a validation error of the registry URI, e.g.
- * `registry uri '...' is not reachable` or `registry uri '...' does not host
- * a registry`. This happens while a new or re-targeted ingress has not yet
- * propagated, and usually resolves after some time.
+ * `updateRegistryCredentials` means that the API could not reach the registry
+ * URI (`registry uri '...' is not reachable`). This happens while a new or
+ * re-targeted ingress has not yet propagated, and usually resolves after some
+ * time.
  *
  * @param error The error thrown by the API call (an `ApiClientError` from
  *     `assertStatus`, which carries the API response)
- * @returns true if the API rejected the request with a validation error for
- *     the `uri` field
+ * @returns true if the API rejected the request with an `unreachable`
+ *     validation error
  */
 export function isRegistryUriNotReachableError(error: unknown): boolean {
     const response = (error as { response?: { status?: number; data?: unknown } } | null)?.response;
@@ -144,7 +144,7 @@ export function isRegistryUriNotReachableError(error: unknown): boolean {
         return false;
     }
 
-    return data.validationErrors.some(validationError => validationError.path === "uri");
+    return data.validationErrors.some(validationError => validationError.type === "unreachable");
 }
 
 /**

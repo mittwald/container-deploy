@@ -83,11 +83,6 @@ function uriValidationErrorResponse(type: string, message: string) {
   } as any;
 }
 
-const registryNotHostedResponse = uriValidationErrorResponse(
-  "noRegistry",
-  "registry uri 'registry.p-test.project.space' does not host a registry",
-);
-
 const registryUnreachableResponse = uriValidationErrorResponse(
   "unreachable",
   "registry uri 'registry.p-test.project.space' is not reachable",
@@ -314,8 +309,8 @@ describe("registry URI propagation", () => {
     apiClient.container.getStack.mockResolvedValueOnce({ status: 200, data: { services: [] } });
     (findDomainByHostname as jest.Mock).mockResolvedValueOnce(retargetedIngress);
     apiClient.container.updateRegistry
-      .mockResolvedValueOnce(registryNotHostedResponse)
-      .mockResolvedValueOnce(registryNotHostedResponse);
+      .mockResolvedValueOnce(registryUnreachableResponse)
+      .mockResolvedValueOnce(registryUnreachableResponse);
 
     const result = await runSetup(apiClient);
 
@@ -363,14 +358,10 @@ describe("registry URI propagation", () => {
   });
 
   it.each([
-    ["a validation error of another field", {
-      status: 400,
-      data: {
-        type: "ValidationError",
-        message: "3 INVALID_ARGUMENT: invalid credentials",
-        validationErrors: [{ type: "invalid", message: "invalid credentials", path: "credentials", context: {} }],
-      },
-    }],
+    ["a validation error of another type", uriValidationErrorResponse(
+      "format",
+      "registry uri 'registry.p-test.project.space' is invalid",
+    )],
     ["a validation error without details", {
       status: 400,
       data: { type: "ValidationError", message: "registry uri 'registry.p-test.project.space' is not reachable" },

@@ -71,7 +71,7 @@ function routesToRegistryService(ingress: DomainData, serviceId: string): boolea
 
 /**
  * Helper: Run a registry API operation, and retry it while the API reports
- * that it cannot reach a registry at the registry URI. The API validates the
+ * that the registry URI is unreachable. The API validates the
  * URI from its own side, so this covers DNS propagation and TLS certificate
  * issuance for new ingresses as well as propagation of re-targeted ones.
  * Other errors are thrown immediately; after the timeout, the last API error
@@ -113,8 +113,8 @@ async function retryWhileRegistryUriNotReachable<T>(
  *
  * After a new or re-targeted ingress, it can take a while until the API can
  * reach the registry at its URI (DNS propagation, TLS certificate issuance).
- * Until then, the API rejects the registry record with a validation error for
- * its URI ("is not reachable", "does not host a registry"); this step is
+ * Until then, the API rejects the registry record with an `unreachable`
+ * validation error ("registry uri '...' is not reachable"); this step is
  * retried until the API accepts it or the timeout is exhausted.
  *
  * @param apiClient The Mittwald API client instance
