@@ -53,6 +53,18 @@ describe("checkRepository", () => {
     expect(repositoryData.ports).toEqual(["8787:8787/tcp", "3000:3000/tcp"]);
   });
 
+  it("should use the first exposed port as the primary mapping", async () => {
+    await fs.writeFile(
+      path.join(testDir, "Dockerfile"),
+      "FROM node:20\nEXPOSE 3000\nEXPOSE 4000/udp\n",
+      "utf-8",
+    );
+
+    const repositoryData = await checkRepository();
+
+    expect(repositoryData.ports).toEqual(["3000:3000/tcp", "4000:4000/tcp"]);
+  });
+
   it("should keep fallback primary port when environment PORT is invalid", async () => {
     await fs.writeFile(
       path.join(testDir, "Dockerfile"),

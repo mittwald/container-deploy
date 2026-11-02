@@ -14,7 +14,7 @@ jest.mock(
   { virtual: true }
 );
 
-import { deployService, deployServiceAs } from "../src/entities/service";
+import { containerPortOf, deployService, deployServiceAs } from "../src/entities/service";
 import { Duration } from "../src/utils/helpers";
 
 // The @mittwald/api-client's assertStatus is a no-op for our mocked responses
@@ -216,6 +216,78 @@ describe("deployService volume handling", () => {
     const updateArg = updateStack.mock.calls[0][0];
     expect(updateArg.data.services["app-project-1"].volumes).toEqual([]);
     expect(updateArg.data.volumes).toEqual({});
+  });
+});
+
+describe("containerPortOf", () => {
+  it.each([
+    ["3000:3000/tcp", "3000"],
+    ["8080:3000/tcp", "3000"],
+    ["3000/tcp", "3000"],
+    ["3000", "3000"],
+    ["127.0.0.1:8080:3000/tcp", "3000"],
+    [" 5000:5000/udp ", "5000"],
+  ])("returns the container port of %p", (mapping, expected) => {
+    expect(containerPortOf(mapping)).toBe(expected);
+  });
+
+  it.each(["", "abc", "3000-3005/tcp", "80:abc/tcp", "0/tcp", "70000/tcp"])(
+    "returns undefined for %p",
+    mapping => {
+      expect(containerPortOf(mapping)).toBeUndefined();
+    },
+  );
+});
+
+describe("deployService PORT environment", () => {
+  const deployWith = async (ports: string[], environment?: Record<string, string>) => {
+    const { apiClient, updateStack } = makeApiClient();
+
+    await deployService(
+      apiClient,
+      "project-1",
+      "stack-1",
+      {
+        buildContext: "/tmp/test-repo",
+        ports,
+        imageName: "registry.test.project.space/app-image:latest",
+      },
+      Duration.fromSeconds(30),
+      environment,
+    );
+
+    return updateStack.mock.calls[0][0].data.services["app-project-1"];
+  };
+
+  it("defaults PORT to the container port of the primary port mapping", async () => {
+    const service = await deployWith(["3000:3000/tcp", "4000:4000/tcp"]);
+
+    expect(service.ports).toEqual(["3000:3000/tcp", "4000:4000/tcp"]);
+    expect(service.environment).toEqual({ PORT: "3000" });
+  });
+
+  it("uses the container port when host and container port differ", async () => {
+    const service = await deployWith(["8080:3000/tcp"]);
+
+    expect(service.environment.PORT).toBe("3000");
+  });
+
+  it("keeps PORT=80 for the default port mapping", async () => {
+    const service = await deployWith(["80:80/tcp"]);
+
+    expect(service.environment.PORT).toBe("80");
+  });
+
+  it.each([[[]], [["invalid"]]])("falls back to PORT=80 for ports %p", async ports => {
+    const service = await deployWith(ports);
+
+    expect(service.environment.PORT).toBe("80");
+  });
+
+  it("lets an explicitly passed PORT take precedence", async () => {
+    const service = await deployWith(["8787:8787/tcp", "3000:3000/tcp"], { PORT: "8787", FOO: "bar" });
+
+    expect(service.environment).toEqual({ PORT: "8787", FOO: "bar" });
   });
 });
 
