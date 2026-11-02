@@ -340,12 +340,10 @@ export async function createAndWaitForDomain(
 
     if (existingDomain) {
         // Reuse existing domain: update its target path
-        console.log(`Reusing existing domain for hostname "${hostname}"`);
         domain = await updateDomainPathTarget(apiClient, existingDomain.id, serviceId, portProtocol);
         wasReused = true;
     } else {
         // Create new domain
-        console.log(`Creating new domain for hostname "${hostname}"`);
         domain = await createDomain(apiClient, projectId, hostname, serviceId, portProtocol);
     }
 

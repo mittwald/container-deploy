@@ -122,6 +122,32 @@ export async function updateRegistryCredentials(
 }
 
 /**
+ * Checks whether an error thrown by `createRegistry` or
+ * `updateRegistryCredentials` means that the API could not reach the registry
+ * URI (`registry uri '...' is not reachable`). This happens while a new or
+ * re-targeted ingress has not yet propagated, and usually resolves after some
+ * time.
+ *
+ * @param error The error thrown by the API call (an `ApiClientError` from
+ *     `assertStatus`, which carries the API response)
+ * @returns true if the API rejected the request with an `unreachable`
+ *     validation error
+ */
+export function isRegistryUriNotReachableError(error: unknown): boolean {
+    const response = (error as { response?: { status?: number; data?: unknown } } | null)?.response;
+    if (response?.status !== 400) {
+        return false;
+    }
+
+    const data = response.data as Partial<MittwaldAPIV2.Components.Schemas.CommonsValidationErrors> | undefined;
+    if (data?.type !== "ValidationError" || !Array.isArray(data.validationErrors)) {
+        return false;
+    }
+
+    return data.validationErrors.some(validationError => validationError.type === "unreachable");
+}
+
+/**
  * Looks up the registry service in a stack and reads its credentials
  * from the deployed environment.
  *
